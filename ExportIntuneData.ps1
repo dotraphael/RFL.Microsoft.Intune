@@ -29,13 +29,44 @@
     .PARAMETER CompanyEmail
         Company E-mail to be added onto the report's header
 
+    .PARAMETER SectionTenantAdmin
+        Export the tenant admin section'
+
+    .PARAMETER SectionEnrollment
+        Export the enrollment section'
+
+    .PARAMETER SectionDevices
+        Export the devices section
+
+    .PARAMETER SectionUsers
+        Export the users section
+
+    .PARAMETER SectionGroups
+        Export the groups section
+
+    .PARAMETER SectionApps
+        Export the apps section
+
+    .PARAMETER SectionEndpointSecurity
+        Export the Endpoint Security section
+
+    .PARAMETER SectionPolicies
+        Export the Policies section
+
     .NOTES
         Name: ExportIntuneData.ps1
         Author: Raphael Perez
-        DateCreated: 17 May 2020 (v0.1)
+        DateCreated: 17 May 2023 (v0.1)
+        LatestUpdate: 24 May 2023 (v0.2)
         Website: http://www.endpointmanagers.com
         WebSite: https://github.com/dotraphael/RFL.Microsoft.Intune
         Twitter: @dotraphael
+        Update: 24 May 2023 (v0.2)
+            - Added filter to disable some sections from being exported
+            - Added more platformsList
+            - Added logging to Graph Connection Info
+            - Added Filters section (apps and devices)
+            - Added Apps Category Section
 
         Create Azure AD Application
         1. create a Azure AD Application - https://learn.microsoft.com/en-us/graph/toolkit/get-started/add-aad-app-registration
@@ -72,6 +103,7 @@
         .\ExportIntuneData.ps1 -ClientId 'xxx' -TenantId 'tenant.com' -ClientSecret 'xxx' -OutputFolderPath "c:\temp"
         .\ExportIntuneData.ps1 -BetaAPI -OutputFormat @('HTML') -ClientId 'xxx' -TenantId 'tenant.com' -ClientSecret 'xxx' -OutputFolderPath "c:\temp"
         .\ExportIntuneData.ps1 -BetaAPI -OutputFormat @('Word', 'HTML') -ClientId 'xxx' -TenantId 'tenant.com' -ClientSecret 'xxx' -OutputFolderPath "c:\temp" -CompanyName 'RFL Systems' -CompanyWeb 'www.rflsystems.co.uk' -CompanyEmail 'team@rflsystems.co.uk'
+        .\ExportIntuneData.ps1 -BetaAPI -OutputFormat @('Word', 'HTML') -ClientId 'xxx' -TenantId 'tenant.com' -ClientSecret 'xxx' -OutputFolderPath "c:\temp" -CompanyName 'RFL Systems' -CompanyWeb 'www.rflsystems.co.uk' -CompanyEmail 'team@rflsystems.co.uk' -SectionTenantAdmin $false -SectionEnrollment $false -SectionDevices $false -SectionUsers $false -SectionGroups $false -SectionEndpointSecurity $false -SectionPolicies $false
 #>
 [CmdletBinding()]
 param(
@@ -102,7 +134,31 @@ param(
     [Parameter(Mandatory = $false, HelpMessage = 'Please provide the company web')]
     [string] $CompanyWeb = '',
     [Parameter(Mandatory = $false, HelpMessage = 'Please provide the company email')]
-    [string] $CompanyEmail = ''
+    [string] $CompanyEmail = '',
+
+    [Parameter(Mandatory = $false, HelpMessage = 'Export the tenant admin section')]
+    [bool]$SectionTenantAdmin = $true,
+
+    [Parameter(Mandatory = $false, HelpMessage = 'Export the enrollment section')]
+    [bool]$SectionEnrollment = $true,
+
+    [Parameter(Mandatory = $false, HelpMessage = 'Export the devices section')]
+    [bool]$SectionDevices = $true,
+
+    [Parameter(Mandatory = $false, HelpMessage = 'Export the users section')]
+    [bool]$SectionUsers = $true,
+
+    [Parameter(Mandatory = $false, HelpMessage = 'Export the groups section')]
+    [bool]$SectionGroups = $true,
+
+    [Parameter(Mandatory = $false, HelpMessage = 'Export the apps section')]
+    [bool]$SectionApps = $true,
+
+    [Parameter(Mandatory = $false, HelpMessage = 'Export the Endpoint Security section')]
+    [bool]$SectionEndpointSecurity = $true,
+
+    [Parameter(Mandatory = $false, HelpMessage = 'Export the Policies section')]
+    [bool]$SectionPolicies = $true
 )
 
 $Error.Clear()
@@ -317,11 +373,18 @@ $AppTypeList = @{
 
 $platformsList = @{
     'windows10' = 'Windows 10 and later';
+    'windows10AndLater' = 'Windows 10 and later';
+    'iOS' = 'iOS/iPadOS';
+    'androidMobileApplicationManagement' = 'Android';
+    'android' = 'Android device administrator';
+    'macOS' = 'macOS';
+    'androidForWork' = 'Android Enterprise';
+    'iOSMobileApplicationManagement' = 'iOS/iPadOS';
 }
 #endregion
 
 #region Variables
-$script:ScriptVersion = '0.1'
+$script:ScriptVersion = '0.2'
 $script:LogFilePath = $env:Temp
 $Script:LogFileFileName = 'ExportIntuneData.log'
 $script:ScriptLogFilePath = "$($script:LogFilePath)\$($Script:LogFileFileName)"
@@ -411,6 +474,10 @@ try {
     Write-RFLLog -Message "Connecting to MS Graph"
     $graphAccess = Connect-MgGraph -AccessToken $token.AccessToken -ErrorAction Stop
     $mgContext = Get-MgContext
+
+    Write-RFLLog -Message "MS Graph Context Connection Info"
+
+    $mgContext.psobject.properties | foreach-object {Write-RFLLog -Message ('    {0} = {1}' -f $_.Name, ($_.Value -join ', '))}
     #endregion
 
     #region main script
@@ -540,1409 +607,56 @@ try {
 
         #region Tenant Admin
         $sectionName = 'Tenant admin'
-	    Write-RFLLog -Message "Starting Section '$($sectionName)'"
-	    Section -Style Heading1 $sectionName {
-            #Paragraph " "
-		    #BlankLine
-
-            #region Tenant Details
-            $SectionName = "Tenant Details"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-		        Write-RFLLog -Message "        MSGraph: organization"
-                $org = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/organization"
-
-                Write-RFLLog -Message "        MSGraph: servicePrincipals/appId=0000000a-0000-0000-c000-000000000000/endpoints"
-                $endpoints = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/servicePrincipals/appId=0000000a-0000-0000-c000-000000000000/endpoints"
-
-                Write-RFLLog -Message "        MSGraph: organization('id')?`$select=mobiledevicemanagementauthority"
-                $mdmAuth = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/organization('$($org.value.id)')?`$select=mobiledevicemanagementauthority"
-
-		        Write-RFLLog -Message "        MSGraph: deviceManagement/subscriptionState"
-		        $accStatus = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/subscriptionState"
-
-		        Write-RFLLog -Message "        MSGraph: subscribedSkus"
-		        $subs = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/subscribedSkus"
-
-                Write-RFLLog -Message "        MSGraph: deviceManagement/managedDeviceOverview"
-		        $mdo = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/managedDeviceOverview"
-                #endregion
-
-                #region Generating Data
-                $OutObj = New-Object PSObject -Property @{
-			        'Tenant Name' = $org.Value.displayName
-			        'Tenant Location' = '{0} {1}' -f ($endpoints.Value | Where-Object {$_.providerName -eq 'Region'}).uri, ($endpoints.Value | Where-Object {$_.providerName -eq 'ASUName'}).Uri.Replace('AMSUB','')
-			        'MDM authority' = $mdmAuth.mobileDeviceManagementAuthority
-			        'Account status' = $accStatus.value
-			        'Total enrolled devices' = $mdo.enrolledDeviceCount
-			        'Total licensed users' = (($subs.Value | Where-Object {$_.skuPartNumber -in ('EMSPREMIUM', 'Microsoft_Intune_Suite')}).consumedUnits | Measure-Object -Sum).Sum
-			        'Total Intune licenses' = (($subs.Value | Where-Object {$_.skuPartNumber -in ('EMSPREMIUM', 'Microsoft_Intune_Suite')}).prepaidunits.enabled | Measure-Object -Sum).Sum
-		        }
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $true
-                    ColumnWidths = 40, 60
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($null -ne $OutObj) {
-		            $OutObj | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Roles
-            $SectionName = "Roles and Assignments"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-		        Write-RFLLog -Message "        MSGraph: deviceManagement/roleDefinitions"
-                $roles = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/roleDefinitions"
-
-		        Write-RFLLog -Message "        MSGraph: deviceManagement/roleDefinitions/{id}/roleAssignments"
-                $OutObj = @()
-                foreach($role in $roles.value) {
-                    $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/roleDefinitions/$($role.id)/roleAssignments"
-                    $OutObj += New-Object PSObject -Property @{
-			            'Display Name' = $role.displayName
-                        'Built In' = $role.isBuiltIn
-                        'Assignments' = $assignments.Value.displayName -join ', '
-		            }
-                }
-		        
-                Write-RFLLog -Message "        MSGraph (Beta): roleManagement/cloudPC/roleDefinitions"
-                ##Todo: use v1.0 version when available
-                $roles = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/roleManagement/cloudPC/roleDefinitions"
-
-		        Write-RFLLog -Message "        MSGraph (Beta): roleManagement/cloudPC/roleAssignments?`$filter=roleDefinitionId eq `'{1}`'"
-                foreach($role in $roles.value) {
-                    ##Todo: use v1.0 version when available
-                    $assignments = Invoke-MgGraphRequest -Method GET -Uri ('{0}/roleManagement/cloudPC/roleAssignments?$filter=roleDefinitionId eq ''{1}''' -f $Global:BetabaseUri, $role.id)
-
-                    $OutObj += New-Object PSObject -Property @{
-			            'Display Name' = $role.displayName
-                        'Built In' = $role.isBuiltIn
-                        'Assignments' = $assignments.Value.displayName -join ', '
-		            }
-                }
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    Header = 'Display Name','Built In', 'Assignments'
-				    Columns = 'Display Name', 'Built In', 'Assignments'
-                    ColumnWidths = 40, 20, 40
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($OutObj.Count -gt 0) {
-		            $OutObj | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Device diagnostics
-            $SectionName = "Device diagnostics"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-		        Write-RFLLog -Message "        MSGraph: deviceManagement/settings"
-                $outObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/settings"
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $true
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($OutObj.Count -gt 0) {
-		            $OutObj | select @{Name="Device diagnostics";Expression = { $_.enableLogCollection }}, @{Name="Autopilot diagnostics";Expression = { $_.enableAutopilotDiagnostics }} | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }		    
-                #endregion
-            }
-            #endregion
-
-            #region Terms and Conditions
-            $SectionName = "Terms and Conditions"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-		        Write-RFLLog -Message "        MSGraph: deviceManagement/termsAndConditions"
-                $tcList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/termsAndConditions"
-
-		        Write-RFLLog -Message "        MSGraph: deviceManagement/termsAndConditions/{id}/assignments"
-                $OutObj = @()
-                foreach($tc in $tcList.value) {
-                    $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/termsAndConditions/$($tc.id)/assignments"
-                    $groupInfo = @()
-                    foreach($assignment in $assignments.Value.target.groupID) {
-                        $groupInfo += Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/groups/$($assignment)"
-                    }
-
-                    $OutObj += New-Object PSObject -Property @{
-                        'Name' = $tc.displayName
-                        'Create Date' = $tc.createdDateTime
-                        'Modified Date' = $tc.lastModifiedDateTime
-                        'Version' = $tc.version
-                        'Assignments' = $groupInfo.displayName -join ', '
-		            }
-                }
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    Header = 'Name', 'Create Date', 'Modified Date', 'Version', 'Assignments'
-				    Columns = 'Name', 'Create Date', 'Modified Date', 'Version', 'Assignments'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($OutObj.Count -gt 0) {
-		            $OutObj | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Intune add-ons
-            $SectionName = "Intune add-ons"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-		        Write-RFLLog -Message "        MSGraph: subscribedSkus"
-                $skus = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/subscribedSkus"
-                $OutObj = @()
-                foreach($item in ($skus.value | where-object {$_.skuPartNumber -in @('Microsoft_Intune_Suite')}) ) {
-                    $OutObj += New-Object PSObject -Property @{
-			            'Add-on' = $skuPartNumberList."$($item.skuPartNumber)"
-                        'Purchased' = $item.prepaidUnits.enabled
-			            'Consumed' = $item.consumedUnits
-		            }
-                }
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    Header = 'Add-on','Purchased', 'Consumed'
-				    Columns = 'Add-on', 'Purchased', 'Consumed'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($OutObj.Count -gt 0) {
-		            $OutObj | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region todo:
-            <#
-            #>
-            #endregion
-        }
-        #endregion
-
-        #region Enrollment
-        PageBreak
-        $sectionName = 'Enrollment'
-	    Write-RFLLog -Message "Starting Section '$($sectionName)'"
-	    Section -Style Heading1 $sectionName {
-            #Paragraph " "
-		    #BlankLine
-
-            #region Device limit restrictions
-            $SectionName = "Device limit restrictions"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/deviceEnrollmentConfigurations?`$expand=assignments&`$filter=deviceEnrollmentConfigurationType%20eq%20%27Limit%27"
-                ##Todo: use v1.0 version when available
-                $enrollmentlimitList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/deviceEnrollmentConfigurations?`$expand=assignments&`$filter=deviceEnrollmentConfigurationType%20eq%20%27Limit%27"
-
-                Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/deviceEnrollmentConfigurations/{id}/assignments"
-                $OutObj = @()
-                foreach($item in $enrollmentlimitList.value) {
-                    $groupInfo = @()
-                    if ($item.priority -eq 0) {
-                        $groupInfo += New-Object PSObject -Property @{ 'displayName' = 'All users and all devices'}
-                    } else {
-                        ##Todo: use v1.0 version when available
-                        $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/deviceEnrollmentConfigurations/$($item.id)/assignments"
-                        foreach($assignment in $assignments.value.target.groupid) {
-                            $groupInfo += Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/groups/$($assignment)"
-                        }
-                    }
-
-                    $OutObj += New-Object PSObject -Property @{
-                        'Name' = $item.displayName
-                        'Priority' = $item.priority
-                        'Limit' = $item.limit
-                        'Assignments' = $groupInfo.displayName -join ', '
-		            }
-                }
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    Header = 'Priority', 'Name', 'Limit', 'Assignments'
-				    Columns = 'Priority', 'Name', 'Limit', 'Assignments'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($OutObj.Count -gt 0) {
-		            $OutObj | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Device enrollment managers
-            $SectionName = "Device enrollment managers"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                Write-RFLLog -Message "        MSGraph: users?`$filter=deviceEnrollmentLimit%20eq%201000&`$select=id,displayName,userPrincipalName&`$skip=0"
-                $outobj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/users?`$filter=deviceEnrollmentLimit%20eq%201000&`$select=id,displayName,userPrincipalName&`$skip=0"
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-				    Header = 'Name','UPN'
-				    Columns = 'displayName', 'userPrincipalName'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($outobj.value.count -gt 0) {
-		            $outobj.value | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region todo:
-            <#
-            windows enrollment
-            apple enrollment
-            android enrollment
-            enrollment device platform restrictions
-            corporate device identifiers
-            #>
-            #endregion
-
-        }
-        #endregion
-
-        #region Devices
-        PageBreak
-        $sectionName = 'Devices'
-	    Write-RFLLog -Message "Starting Section '$($sectionName)'"
-	    Section -Style Heading1 $sectionName {
-            #Paragraph " "
-		    #BlankLine
-
-            #region Data Used by the next few sections
-            Write-RFLLog -Message "    MSGraph (Beta): deviceManagement/managedDevices"
-            ##Todo: use v1.0 version when complianceState, ownerType, jointype, autopilotEnrolled, managementState are available 
-            $mdmList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/managedDevices"
-
-            #$mdmList.value | Group-Object complianceState - does not work as expected. it returns name = "" so fixing with foreach
-            $mdmListFixed = @()
-            foreach($item in $mdmList.value) {
-                $mdmListFixed += New-Object PSObject -Property @{
-                    id = $item.id
-                    complianceState = $item.complianceState
-                    operatingSystem = $item.operatingSystem
-                    osVersion = $item.osVersion
-                    ownerType = $item.ownerType
-                    model = $item.model
-                    managementAgent = $item.managementAgent
-                    joinType = $item.joinType
-                    autopilotEnrolled = $item.autopilotEnrolled
-                    managementState = $item.managementState
-                }
-            }
-
-
-            Write-RFLLog -Message "    MSGraph (Beta): deviceManagement/manageddevices/{id)}?`$select=deviceactionresults,managementstate,lostModeState,deviceRegistrationState,ownertype"
-            $das = @()
-            foreach($item in $mdmList.Value) {
-                ##Todo: use v1.0 version when available
-                $dasList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/manageddevices/{$($item.id)}?`$select=deviceactionresults,managementstate,lostModeState,deviceRegistrationState,ownertype"
-                foreach($dasItem in $dasList.deviceActionResults) {
-                    $dasobj = New-Object PSObject -Property @{
-                        'DeviceID' = $item.id
-                        'Name' = $item.deviceName
-                        'Action' = ''
-                        'Status' = $statusList."$($dasItem.actionState)"
-                        'DateTime' = $dasItem.startDateTime
-                        'actionName' = $dasItem.actionName
-                    }
-
-                    $dasobj.Action = switch ($dasItem.actionName.tolower()) {
-                        'locatedevice' { 'Locate device' }
-                        'windowsdefenderscan' { $dasItem.scanType }
-                        default { $dasItem.actionName }
-                    }
-
-                    $das += $dasobj
-                }
-            }
-            #endregion
-
-            #region Enrollment Status
-            $SectionName = "Enrollment Status"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                Write-RFLLog -Message "        MSGraph: deviceManagement/managedDeviceOverview"
-		        $mdo = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/managedDeviceOverview"
-                #endregion
-
-                #region Generating Data
-                $OutObj = @()
-                foreach($item in $mdo.deviceOperatingSystemSummary.GetEnumerator()){
-                    $OutObj += New-Object PSObject -Property @{
-			            'Operating System' = $OperatingSystemList."$($item.key.Replace('Count',''))"
-			            'Count' = $item.Value
-		            }
-                }
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Operating System', 'Count'
-				    Columns = 'Operating System', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($outobj.count -gt 0) {
-		            $outobj | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Compliance
-            $SectionName = "Compliance"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($mdmList.value.count -gt 0) {
-                    #$mdmList.value | Group-Object complianceState does not work as expected. it returns name = "" so fixing with foreach
-		            #$mdmList.value | Group-Object complianceState | Table @TableParams
-                    $mdmListFixed | Group-Object complianceState | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Ownership
-            $SectionName = "Ownership"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($mdmList.value.count -gt 0) {
-                    #$mdmList.value | Group-Object ownerType does not work as expected. it returns name = "" so fixing with foreach
-		            #$mdmList.value | Group-Object ownerType | Table @TableParams
-                    $mdmListFixed | Group-Object ownerType | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Join Type
-            $SectionName = "Join Type"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($mdmList.value.count -gt 0) {
-                    #$mdmList.value | Group-Object joinType does not work as expected. it returns name = "" so fixing with foreach
-		            #$mdmList.value | Group-Object joinType | Table @TableParams
-                    $mdmListFixed | Group-Object joinType | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Autopilot Enrolled
-            $SectionName = "Autopilot Enrolled"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($mdmList.value.count -gt 0) {
-                    #$mdmList.value | Group-Object autopilotEnrolled does not work as expected. it returns name = "" so fixing with foreach
-		            #$mdmList.value | Group-Object autopilotEnrolled | Table @TableParams
-                    $mdmListFixed | Group-Object autopilotEnrolled | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion        
-
-            #region Managed By
-            $SectionName = "Managed By"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($mdmList.value.count -gt 0) {
-                    #$mdmList.value | Group-Object managementAgent does not work as expected. it returns name = "" so fixing with foreach
-		            #$mdmList.value | Group-Object managementAgent | Table @TableParams
-                    $mdmListFixed | Group-Object managementAgent | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-		        #endregion
-            }
-            #endregion
-
-            #region Management State
-            $SectionName = "Management State"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($mdmList.value.count -gt 0) {
-                    #$mdmList.value | Group-Object managementState does not work as expected. it returns name = "" so fixing with foreach
-		            #$mdmList.value | Group-Object managementState | Table @TableParams
-                    $mdmListFixed | Group-Object managementState | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion     
-
-            #region Operating System Name/Version
-            $SectionName = "Operating System Name/Version"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($mdmList.value.count -gt 0) {
-                    #$mdmList.value | Group-Object operatingSystem,osVersion does not work as expected. it returns name = "" so fixing with foreach
-		            #$mdmList.value | Group-Object operatingSystem,osVersion | Table @TableParams
-                    $mdmListFixed | Group-Object operatingSystem,osVersion | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Hardware Model
-            $SectionName = "Hardware Model"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 80, 20
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($mdmList.value.count -gt 0) {
-                    #$mdmList.value | Group-Object model does not work as expected. it returns name = "" so fixing with foreach
-		            #$mdmList.value | Group-Object model | Table @TableParams
-                    $mdmListFixed | Group-Object model | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Device actions status
-            $SectionName = "Device actions status"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($das.count -gt 0) {
-		            $das | Group-Object Action,Status | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Device clean-up rules
-            $SectionName = "Device clean-up rules"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/managedDeviceCleanupSettings"
-                ##Todo: use v1.0 version when available
-                $OutObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/managedDeviceCleanupSettings"
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $true
-                    ColumnWidths = 80, 20
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($OutObj.count -gt 0) {
-		            $OutObj | select @{Name="Delete devices based on last check-in date";Expression = { $null -ne $_.deviceInactivityBeforeRetirementInDays }}, @{Name="Delete devices that haven't checked in for this many days";Expression = { $_.deviceInactivityBeforeRetirementInDays }} | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Device Categories
-            $SectionName = "Device Categories"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                Write-RFLLog -Message "        MSGraph: deviceManagement/deviceCategories"
-                $OutObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/deviceCategories"
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($OutObj.Value.Count -gt 0) {
-    		        $OutObj.Value | select @{Name="Display Name";Expression = { $_.displayName }}, @{Name="Description";Expression = { $_.description }} | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region todo:
-            <#
-            filters
-            #>
-            #endregion
-        }
-        #endregion
-
-        #region Users
-        PageBreak
-        $sectionName = 'Users'
-	    Write-RFLLog -Message "Starting Section '$($sectionName)'"
-	    Section -Style Heading1 $sectionName {
-            #Paragraph " "
-		    #BlankLine
-
-            #region Data Used by the next few sections
-            Write-RFLLog -Message "    MSGraph (Beta): users"
-            ##Todo: use v1.0 version when userType, accountEnabled, onPremisesSyncEnabled, passwordPolicies, usageLocation are available 
-            $userList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/users"
-
-            #$userList.value | Group-Object userType - does not work as expected. it returns name = "" so fixing with foreach
-            $userListFixed = @()
-            foreach($item in $userList.value) {
-                $userListFixed += New-Object PSObject -Property @{
-                    id = $item.id
-                    userType = $item.userType
-                    accountEnabled = $item.accountEnabled
-                    onPremisesSyncEnabled = $item.onPremisesSyncEnabled
-                    passwordPolicies = $item.passwordPolicies
-                    usageLocation = $item.usageLocation
-                }
-            }
-            #endregion
-
-            #region User Type
-            $SectionName = "User Type"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($userList.value.count -gt 0) {
-                    #$userList.value | Group-Object userType does not work as expected. it returns name = "" so fixing with foreach
-		            #$userList.value | Group-Object userType | Table @TableParams
-                    $userListFixed | Group-Object userType | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region account status
-            $SectionName = "Account Enabled Status"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($userList.value.count -gt 0) {
-                    #$userList.value | Group-Object accountEnabled does not work as expected. it returns name = "" so fixing with foreach
-		            #$userList.value | Group-Object accountEnabled | Table @TableParams
-                    $userListFixed | Group-Object accountEnabled | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region onprem sync enabled
-            $SectionName = "onprem sync enabled"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($userList.value.count -gt 0) {
-                    #$userList.value | Group-Object onPremisesSyncEnabled does not work as expected. it returns name = "" so fixing with foreach
-		            #$userList.value | Group-Object onPremisesSyncEnabled | Table @TableParams
-                    $userListFixed | Group-Object onPremisesSyncEnabled | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region password Policies
-            $SectionName = "password Policies"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($userList.value.count -gt 0) {
-                    #$userList.value | Group-Object passwordPolicies does not work as expected. it returns name = "" so fixing with foreach
-		            #$userList.value | Group-Object passwordPolicies | Table @TableParams
-                    $userListFixed | Group-Object passwordPolicies | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region usage Location
-            $SectionName = "usage Location"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($userList.value.count -gt 0) {
-                    #$userList.value | Group-Object usageLocation does not work as expected. it returns name = "" so fixing with foreach
-		            #$userList.value | Group-Object usageLocation | Table @TableParams
-                    $userListFixed | Group-Object usageLocation | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region identities
-            $SectionName = "identities"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                $userIdentities = @()
-                foreach($item in $userList.value) {
-                    foreach($identityItem in $item.identities) {
-                        $userIdentities += New-Object PSObject -Property @{ 'issuer' = $identityItem.issuer }
-                    }
-                }
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Name', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($userIdentities.count -gt 0) {
-		            $userIdentities | Group-Object issuer | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region registeredDevices
-            $SectionName = "Registered Devices"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                Write-RFLLog -Message "        MSGraph: users/{id}/registeredDevices"
-                $regDevices = @()
-                foreach($item in $userList.value) {
-                    $userDevices = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/users/{$($item.id)}/registeredDevices"
-                    $regDevices += New-Object PSObject -Property @{ 
-                        'user' = $item.userPrincipalName
-                        'count' = $userDevices.value.count
-                    }
-                }
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Number of Registered Devices', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($regDevices.count -gt 0) {
-		            $regDevices | Group-Object count | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Authentication Method
-            $SectionName = "Authentication Method"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                Write-RFLLog -Message "        MSGraph: users/{UPN}/authentication/methods"
-                $authUsers = @()
-                foreach($item in $userList.value) {
-                    $authMethods = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/users/$($item.userPrincipalName)/authentication/methods"
-                    foreach($authItem in $authMethods.value) {
-                        $authUsers += New-Object PSObject -Property @{ 
-                            'user' = $item.userPrincipalName
-                            'Method' = $AuthenticationMethodList."$($authItem.'@odata.type')"
-                        }
-                    }
-                }
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Authentication Method', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($authUsers.count -gt 0) {
-		            $authUsers | Select-Object 'user','method' -Unique | Group-Object Method | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }        
-            #endregion
-
-            #region MFA Enabled
-            $SectionName = "MFA Enabled"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                $mfaUsers = @()
-                foreach($item in $userList.value) {
-                    $mfaUsers += New-Object PSObject -Property @{
-                        'user' = $item.userPrincipalName
-                        'MFA Status' = (($authUsers | Where-Object {($_.user -eq $item.userPrincipalName) -and ($_.Method -ne 'Password')} | Measure-Object).Count -gt 0)
-                    }
-                }
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'MFA Enabled', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($mfaUsers.count -gt 0) {
-		            $mfaUsers | Group-Object 'MFA Status' | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region last signin
-            $SectionName = "Last Sign In"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                Write-RFLLog -Message "        MSGraph: users?`$select=displayName,signInActivity"
-                $userLastLogin = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/users?`$select=displayName,signInActivity"
-                $outobj = @()
-                foreach($item in $userLastLogin.value) {
-                    $Obj = New-Object PSObject -Property @{
-                        'user' = $item.displayName
-                        'datetime' = $item.signInActivity.lastSignInDateTime
-                        'DaysDifference' = 0
-                        'DaysRange' = ''                    
-                    }
-
-                    if ($null -eq $item.signInActivity.lastSignInDateTime) {
-                        $obj.DaysDifference = -1
-                    } else {
-                        $obj.DaysDifference = (New-TimeSpan -End (get-date) -Start ($item.signInActivity.lastSignInDateTime)).Days
-                    }
-
-                    $obj.DaysRange = switch ($obj.DaysDifference) {
-                        -1 { 'Never' }
-                        0 { 'Today' }
-                        1..7 { 'Last 7 Days'}
-                        8..14 { 'Last 2 Weeks' }
-                        15..30 { 'This month' }
-                        31..90 { 'Last 3 months' }
-                        default { 'Over 90 days' }
-                    }
-                    $outobj += $obj
-                }
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Last Sign in', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($outobj.count -gt 0) {
-		            $outobj | Group-Object DaysRange | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region todo:
-            <#
-            password reset
-            user settings
-            #>
-            #endregion
-
-        }
-        #endregion
-
-        #region Groups
-        PageBreak
-        $sectionName = 'Groups'
-	    Write-RFLLog -Message "Starting Section '$($sectionName)'"
-	    Section -Style Heading1 $sectionName {
-            #Paragraph " "
-		    #BlankLine
-
-            #region Data Used by the next few sections
-            Write-RFLLog -Message "    MSGraph: groups"
-            $groupList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/groups"
-
-            Write-RFLLog -Message "    MSGraph: groups/{id}/members"
-            $groupInfo = @()
-            foreach($item in $groupList.Value) {
-                $members = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/groups/{$($item.id)}/members"
-                $owners = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/groups/{$($item.id)}/owners"
-
-                $groupInfo += New-Object PSObject -Property @{
-                    'id' = $item.id
-                    'groupname' = $item.displayName
-                    'members' = $members.Value.count
-                    'owners' = $owners.Value.count
-                }
-            }
-            #endregion
-
-            #region Group Membership Type
-            $SectionName = "Group Membership Type"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Group Membership Type', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($groupList.value.count -gt 0) {
-		            $groupList.value | select id, @{Name="GroupType";Expression = { if ($null -eq $_.membershipRule) { 'Assigned' } else {'Dynamic'} }} | Group-Object GroupType | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Group Type
-            $SectionName = "Group Type"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Group Type', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($groupList.value.count -gt 0) {
-		            $groupList.value | select id, @{Name="GroupType";Expression = { if ($false -eq $_.mailEnabled) { 'Security' } else {'Microsoft 365'} }} | Group-Object GroupType | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Group Source
-            $SectionName = "Group Source"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Source', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($groupList.value.count -gt 0) {
-		            $groupList.value | select id, @{Name="GroupSource";Expression = { if ($null -eq $_.onPremisesLastSyncDateTime) { 'Cloud' } else {'On Premises'} }} | Group-Object GroupSource | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Group Membership Count
-            $SectionName = "Group Membership Count"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Membership Count', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($groupInfo.count -gt 0) {
-		            $groupInfo | Group-Object Members | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Group Owners Count
-            $SectionName = "Group Owners Count"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Ownership Count', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($groupInfo.count -gt 0) {
-		            $groupInfo | Group-Object owners | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region todo:
-            <#
-            #>
-            #endregion
-        }
-        #endregion
-
-        #region Apps
-        PageBreak
-        $sectionName = 'Apps'
-	    Write-RFLLog -Message "Starting Section '$($sectionName)'"
-	    Section -Style Heading1 $sectionName {
-            #Paragraph " "
-		    #BlankLine
-
-            #region Data Used by the next few sections
-            ##Todo: use v1.0 version when isAssigned is available 
-            Write-RFLLog -Message "    MSGraph (Beta): deviceAppManagement/mobileApps"
-            $AppList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceAppManagement/mobileApps"
-
-            Write-RFLLog -Message "    MSGraph (Beta): deviceAppManagement/mobileApps/{id}/installSummary"
-            $AppInstallList = @()
-            foreach($item in $AppList.Value) {
-                ##Todo: use v1.0 version when available
-                $installInfo = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceAppManagement/mobileApps/$($item.id)/installSummary"
-                $AppInstallList += New-Object PSObject -Property @{
-                    'platform' = $AppTypeList."$($item.'@odata.type')"
-                    'id' = $item.id
-                    'installedDeviceCount' = $installInfo.installedDeviceCount
-                    'failedDeviceCount' = $installInfo.failedDeviceCount
-                    'notApplicableDeviceCount' = $installInfo.notApplicableDeviceCount
-                    'notInstalledDeviceCount' = $installInfo.notInstalledDeviceCount
-                    'pendingInstallDeviceCount' = $installInfo.pendingInstallDeviceCount
-                    'installedUserCount' = $installInfo.installedUserCount
-                    'notApplicableUserCount' = $installInfo.notApplicableUserCount
-                    'failedUserCount' = $installInfo.failedUserCount
-                    'notInstalledUserCount' = $installInfo.notInstalledUserCount
-                    'pendingInstallUserCount' = $installInfo.pendingInstallUserCount
-                }
-            }
-            #endregion
-
-            #region Apps Per Type
-            $SectionName = "Apps Type"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'App Type', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($AppList.value.count -gt 0) {
-		            $AppList.value | select id, @{Name="AppType";Expression = { $AppTypeList."$($_.'@odata.type')" }} | Group-Object AppType | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region Assigned Apps
-            $SectionName = "Assigned Apps Status"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 40, 60
-                    Header = 'Assigned Status', 'Count'
-				    Columns = 'Name', 'Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($AppList.value.count -gt 0) {
-		            $AppList.value | Group-Object isAssigned | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region App Installation Status
-            $SectionName = "Apps Installation Status"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Collect Data
-                #endregion
-
-                #region Generating Data
-		        $TableParams = @{
-                    Name = $SectionName
-                    List = $false
-                    ColumnWidths = 25, 25, 25, 25
-                    Header = 'Platform', 'Application Count', 'Failed Device Count', 'Failed User Count'
-				    Columns = 'Platform', 'Application Count', 'Failed Device Count', 'Failed User Count'
-                }
-		        $TableParams['Caption'] = "- $($TableParams.Name)"
-                if ($AppInstallList.count -gt 0) {
-		            $AppInstallList | Group-Object platform,failedDeviceCount,failedUserCount | select @{Name="Application Count";Expression={$_.Count}}, @{Name="platform";Expression={$_.Group[0].Platform}}, @{Name="Failed Device Count";Expression={$_.group[0].failedDeviceCount}}, @{Name="Failed User Count";Expression={$_.group[0].failedUserCount}} | Table @TableParams
-                } else {
-                    Paragraph "No $($sectionName) found"
-                }
-                #endregion
-            }
-            #endregion
-
-            #region todo:
-            <# 
-            app protection policy
-            app configuration policy
-            ios app provisioning profiles
-            s mode supplemental policies
-            policies for office apps
-            App selective wipe
-            app categories
-            #>
-            #endregion
-
-        }
-        #endregion
-
-        #region Endpoint security
-        PageBreak
-        $sectionName = 'Endpoint security'
-	    Write-RFLLog -Message "Starting Section '$($sectionName)'"
-	    Section -Style Heading1 $sectionName {
-            #Paragraph " "
-		    #BlankLine
-
-            #region Anti-Virus
-            $SectionName = "Anti-Virus"
-            Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-            Section -Style Heading2 $SectionName {
-                #region Data Used by the next few sections
-                Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/configurationPolicies?`$select=id,name,description,platforms,lastModifiedDateTime,technologies,settingCount,roleScopeTagIds,isAssigned,templateReference&`$filter=templateReference/TemplateFamily eq 'endpointSecurityAntivirus'"
-                ##Todo: use v1.0 version when available
-                $avList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies?`$select=id,name,description,platforms,lastModifiedDateTime,technologies,settingCount,roleScopeTagIds,isAssigned,templateReference&`$filter=templateReference/TemplateFamily eq 'endpointSecurityAntivirus'"
-
-                Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/configurationPolicies/{1}/assignments"
-                $avAssignmentList = @()
-                foreach($item in $avList.value) {
-                    ##Todo: use v1.0 version when available
-                    $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies/$($item.id)/assignments"
-                    $groupInfo = @()
-                    foreach($assignment in $assignments.Value.target.groupID) {
-                        $groupInfo += Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/groups/$($assignment)"
-                    }
-
-                    $avAssignmentList += New-Object PSObject -Property @{
-                        'platforms' = $item.platforms
-                        'name' = $item.name
-                        'templatereference' = $item.templatereference
-                        'technologies' = $item.technologies
-                        'lastModifiedDateTime' = $item.lastModifiedDateTime
-                        'Assignments' = $groupInfo.displayName -join ', '
-		            }
-                }
-                #endregion
-
-                #region Malware Overview
-                $SectionName = "Malware Overview"
+        if ($SectionTenantAdmin -eq $false) {
+	        Write-RFLLog -Message "Exporting Section '$($sectionName)' is being ignored as the parameter to export is set to false" -LogLevel 2
+        } else {
+	        Write-RFLLog -Message "Starting Section '$($sectionName)'"
+	        Section -Style Heading1 $sectionName {
+                #Paragraph " "
+		        #BlankLine
+
+                #region Tenant Details
+                $SectionName = "Tenant Details"
                 Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-                Section -Style Heading3 $SectionName {
+                Section -Style Heading2 $SectionName {
                     #region Collect Data
-                    Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/deviceProtectionOverview"
-                    ##Todo: use v1.0 version when available
-                    $objOut = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/deviceProtectionOverview"
+		            Write-RFLLog -Message "        MSGraph: organization"
+                    $org = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/organization"
+
+                    Write-RFLLog -Message "        MSGraph: servicePrincipals/appId=0000000a-0000-0000-c000-000000000000/endpoints"
+                    $endpoints = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/servicePrincipals/appId=0000000a-0000-0000-c000-000000000000/endpoints"
+
+                    Write-RFLLog -Message "        MSGraph: organization('id')?`$select=mobiledevicemanagementauthority"
+                    $mdmAuth = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/organization('$($org.value.id)')?`$select=mobiledevicemanagementauthority"
+
+		            Write-RFLLog -Message "        MSGraph: deviceManagement/subscriptionState"
+		            $accStatus = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/subscriptionState"
+
+		            Write-RFLLog -Message "        MSGraph: subscribedSkus"
+		            $subs = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/subscribedSkus"
+
+                    Write-RFLLog -Message "        MSGraph: deviceManagement/managedDeviceOverview"
+		            $mdo = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/managedDeviceOverview"
                     #endregion
 
                     #region Generating Data
+                    $OutObj = New-Object PSObject -Property @{
+			            'Tenant Name' = $org.Value.displayName
+			            'Tenant Location' = '{0} {1}' -f ($endpoints.Value | Where-Object {$_.providerName -eq 'Region'}).uri, ($endpoints.Value | Where-Object {$_.providerName -eq 'ASUName'}).Uri.Replace('AMSUB','')
+			            'MDM authority' = $mdmAuth.mobileDeviceManagementAuthority
+			            'Account status' = $accStatus.value
+			            'Total enrolled devices' = $mdo.enrolledDeviceCount
+			            'Total licensed users' = (($subs.Value | Where-Object {$_.skuPartNumber -in ('EMSPREMIUM', 'Microsoft_Intune_Suite')}).consumedUnits | Measure-Object -Sum).Sum
+			            'Total Intune licenses' = (($subs.Value | Where-Object {$_.skuPartNumber -in ('EMSPREMIUM', 'Microsoft_Intune_Suite')}).prepaidunits.enabled | Measure-Object -Sum).Sum
+		            }
 		            $TableParams = @{
                         Name = $SectionName
                         List = $true
-                        ColumnWidths = 60, 40
+                        ColumnWidths = 40, 60
                     }
 		            $TableParams['Caption'] = "- $($TableParams.Name)"
-                    if ($null -ne $objOut -gt 0) {
-		                $objOut | select  @{Name="Pending Signature update";Expression={$_.pendingSignatureUpdateDeviceCount}}, @{Name="Pending full scan";Expression={$_.pendingFullScanDeviceCount}}, @{Name="Pending Quick scan";Expression={$_.pendingQuickScanDeviceCount}}, @{Name="Pending restart";Expression={$_.pendingRestartDeviceCount}}, @{Name="Pending manual steps";Expression={$_.pendingManualStepsDeviceCount}}, @{Name="Pending offline scan";Expression={$_.pendingOfflineScanDeviceCount}}, @{Name="Critical failures";Expression={$_.criticalFailuresDeviceCount}}, @{Name="Inactive agent";Expression={$_.inactiveThreatAgentDeviceCount}}, @{Name="Unknown status";Expression={$_.unknownStateThreatAgentDeviceCount}} | Table @TableParams 
+                    if ($null -ne $OutObj) {
+		                $OutObj | Table @TableParams
                     } else {
                         Paragraph "No $($sectionName) found"
                     }
@@ -1950,10 +664,366 @@ try {
                 }
                 #endregion
 
-                #region Anti-Virus Policies
-                $SectionName = "Anti-Virus Policies"
+                #region Roles
+                $SectionName = "Roles and Assignments"
                 Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
-                Section -Style Heading3 $SectionName {
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+		            Write-RFLLog -Message "        MSGraph: deviceManagement/roleDefinitions"
+                    $roles = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/roleDefinitions"
+
+		            Write-RFLLog -Message "        MSGraph: deviceManagement/roleDefinitions/{id}/roleAssignments"
+                    $OutObj = @()
+                    foreach($role in $roles.value) {
+                        $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/roleDefinitions/$($role.id)/roleAssignments"
+                        $OutObj += New-Object PSObject -Property @{
+			                'Display Name' = $role.displayName
+                            'Built In' = $role.isBuiltIn
+                            'Assignments' = $assignments.Value.displayName -join ', '
+		                }
+                    }
+		        
+                    Write-RFLLog -Message "        MSGraph (Beta): roleManagement/cloudPC/roleDefinitions"
+                    ##Todo: use v1.0 version when available
+                    $roles = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/roleManagement/cloudPC/roleDefinitions"
+
+		            Write-RFLLog -Message "        MSGraph (Beta): roleManagement/cloudPC/roleAssignments?`$filter=roleDefinitionId eq `'{1}`'"
+                    foreach($role in $roles.value) {
+                        ##Todo: use v1.0 version when available
+                        $assignments = Invoke-MgGraphRequest -Method GET -Uri ('{0}/roleManagement/cloudPC/roleAssignments?$filter=roleDefinitionId eq ''{1}''' -f $Global:BetabaseUri, $role.id)
+
+                        $OutObj += New-Object PSObject -Property @{
+			                'Display Name' = $role.displayName
+                            'Built In' = $role.isBuiltIn
+                            'Assignments' = $assignments.Value.displayName -join ', '
+		                }
+                    }
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        Header = 'Display Name','Built In', 'Assignments'
+				        Columns = 'Display Name', 'Built In', 'Assignments'
+                        ColumnWidths = 40, 20, 40
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($OutObj.Count -gt 0) {
+		                $OutObj | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Device diagnostics
+                $SectionName = "Device diagnostics"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+		            Write-RFLLog -Message "        MSGraph: deviceManagement/settings"
+                    $outObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/settings"
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $true
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($OutObj.Count -gt 0) {
+		                $OutObj | select @{Name="Device diagnostics";Expression = { $_.enableLogCollection }}, @{Name="Autopilot diagnostics";Expression = { $_.enableAutopilotDiagnostics }} | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }		    
+                    #endregion
+                }
+                #endregion
+
+                #region Terms and Conditions
+                $SectionName = "Terms and Conditions"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+		            Write-RFLLog -Message "        MSGraph: deviceManagement/termsAndConditions"
+                    $tcList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/termsAndConditions"
+
+		            Write-RFLLog -Message "        MSGraph: deviceManagement/termsAndConditions/{id}/assignments"
+                    $OutObj = @()
+                    foreach($tc in $tcList.value) {
+                        $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/termsAndConditions/$($tc.id)/assignments"
+                        $groupInfo = @()
+                        foreach($assignment in $assignments.Value.target.groupID) {
+                            $groupInfo += Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/groups/$($assignment)"
+                        }
+
+                        $OutObj += New-Object PSObject -Property @{
+                            'Name' = $tc.displayName
+                            'Create Date' = $tc.createdDateTime
+                            'Modified Date' = $tc.lastModifiedDateTime
+                            'Version' = $tc.version
+                            'Assignments' = $groupInfo.displayName -join ', '
+		                }
+                    }
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        Header = 'Name', 'Create Date', 'Modified Date', 'Version', 'Assignments'
+				        Columns = 'Name', 'Create Date', 'Modified Date', 'Version', 'Assignments'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($OutObj.Count -gt 0) {
+		                $OutObj | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Intune add-ons
+                $SectionName = "Intune add-ons"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+		            Write-RFLLog -Message "        MSGraph: subscribedSkus"
+                    $skus = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/subscribedSkus"
+                    $OutObj = @()
+                    foreach($item in ($skus.value | where-object {$_.skuPartNumber -in @('Microsoft_Intune_Suite')}) ) {
+                        $OutObj += New-Object PSObject -Property @{
+			                'Add-on' = $skuPartNumberList."$($item.skuPartNumber)"
+                            'Purchased' = $item.prepaidUnits.enabled
+			                'Consumed' = $item.consumedUnits
+		                }
+                    }
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        Header = 'Add-on','Purchased', 'Consumed'
+				        Columns = 'Add-on', 'Purchased', 'Consumed'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($OutObj.Count -gt 0) {
+		                $OutObj | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region todo:
+                <#
+                #>
+                #endregion
+            }
+        }
+        #endregion
+
+        #region Enrollment
+        $sectionName = 'Enrollment'
+        if ($SectionEnrollment -eq $false) {
+	        Write-RFLLog -Message "Exporting Section '$($sectionName)' is being ignored as the parameter to export is set to false" -LogLevel 2
+        } else {
+            PageBreak
+	        Write-RFLLog -Message "Starting Section '$($sectionName)'"
+	        Section -Style Heading1 $sectionName {
+                #Paragraph " "
+		        #BlankLine
+
+                #region Device limit restrictions
+                $SectionName = "Device limit restrictions"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/deviceEnrollmentConfigurations?`$expand=assignments&`$filter=deviceEnrollmentConfigurationType%20eq%20%27Limit%27"
+                    ##Todo: use v1.0 version when available
+                    $enrollmentlimitList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/deviceEnrollmentConfigurations?`$expand=assignments&`$filter=deviceEnrollmentConfigurationType%20eq%20%27Limit%27"
+
+                    Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/deviceEnrollmentConfigurations/{id}/assignments"
+                    $OutObj = @()
+                    foreach($item in $enrollmentlimitList.value) {
+                        $groupInfo = @()
+                        if ($item.priority -eq 0) {
+                            $groupInfo += New-Object PSObject -Property @{ 'displayName' = 'All users and all devices'}
+                        } else {
+                            ##Todo: use v1.0 version when available
+                            $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/deviceEnrollmentConfigurations/$($item.id)/assignments"
+                            foreach($assignment in $assignments.value.target.groupid) {
+                                $groupInfo += Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/groups/$($assignment)"
+                            }
+                        }
+
+                        $OutObj += New-Object PSObject -Property @{
+                            'Name' = $item.displayName
+                            'Priority' = $item.priority
+                            'Limit' = $item.limit
+                            'Assignments' = $groupInfo.displayName -join ', '
+		                }
+                    }
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        Header = 'Priority', 'Name', 'Limit', 'Assignments'
+				        Columns = 'Priority', 'Name', 'Limit', 'Assignments'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($OutObj.Count -gt 0) {
+		                $OutObj | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Device enrollment managers
+                $SectionName = "Device enrollment managers"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    Write-RFLLog -Message "        MSGraph: users?`$filter=deviceEnrollmentLimit%20eq%201000&`$select=id,displayName,userPrincipalName&`$skip=0"
+                    $outobj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/users?`$filter=deviceEnrollmentLimit%20eq%201000&`$select=id,displayName,userPrincipalName&`$skip=0"
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+				        Header = 'Name','UPN'
+				        Columns = 'displayName', 'userPrincipalName'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($outobj.value.count -gt 0) {
+		                $outobj.value | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region todo:
+                <#
+                windows enrollment
+                apple enrollment
+                android enrollment
+                enrollment device platform restrictions
+                corporate device identifiers
+                #>
+                #endregion
+            }
+        }
+        #endregion
+
+        #region Devices
+        $sectionName = 'Devices'
+        if ($SectionDevices -eq $false) {
+	        Write-RFLLog -Message "Exporting Section '$($sectionName)' is being ignored as the parameter to export is set to false" -LogLevel 2
+        } else {
+            PageBreak
+	        Write-RFLLog -Message "Starting Section '$($sectionName)'"
+	        Section -Style Heading1 $sectionName {
+                #Paragraph " "
+		        #BlankLine
+
+                #region Data Used by the next few sections
+                Write-RFLLog -Message "    MSGraph (Beta): deviceManagement/managedDevices"
+                ##Todo: use v1.0 version when complianceState, ownerType, jointype, autopilotEnrolled, managementState are available 
+                $mdmList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/managedDevices"
+
+                #$mdmList.value | Group-Object complianceState - does not work as expected. it returns name = "" so fixing with foreach
+                $mdmListFixed = @()
+                foreach($item in $mdmList.value) {
+                    $mdmListFixed += New-Object PSObject -Property @{
+                        id = $item.id
+                        complianceState = $item.complianceState
+                        operatingSystem = $item.operatingSystem
+                        osVersion = $item.osVersion
+                        ownerType = $item.ownerType
+                        model = $item.model
+                        managementAgent = $item.managementAgent
+                        joinType = $item.joinType
+                        autopilotEnrolled = $item.autopilotEnrolled
+                        managementState = $item.managementState
+                    }
+                }
+
+                Write-RFLLog -Message "    MSGraph (Beta): deviceManagement/manageddevices/{id)}?`$select=deviceactionresults,managementstate,lostModeState,deviceRegistrationState,ownertype"
+                $das = @()
+                foreach($item in $mdmList.Value) {
+                    ##Todo: use v1.0 version when available
+                    $dasList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/manageddevices/{$($item.id)}?`$select=deviceactionresults,managementstate,lostModeState,deviceRegistrationState,ownertype"
+                    foreach($dasItem in $dasList.deviceActionResults) {
+                        $dasobj = New-Object PSObject -Property @{
+                            'DeviceID' = $item.id
+                            'Name' = $item.deviceName
+                            'Action' = ''
+                            'Status' = $statusList."$($dasItem.actionState)"
+                            'DateTime' = $dasItem.startDateTime
+                            'actionName' = $dasItem.actionName
+                        }
+
+                        $dasobj.Action = switch ($dasItem.actionName.tolower()) {
+                            'locatedevice' { 'Locate device' }
+                            'windowsdefenderscan' { $dasItem.scanType }
+                            default { $dasItem.actionName }
+                        }
+
+                        $das += $dasobj
+                    }
+                }
+                #endregion
+
+                #region Enrollment Status
+                $SectionName = "Enrollment Status"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    Write-RFLLog -Message "        MSGraph: deviceManagement/managedDeviceOverview"
+		            $mdo = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/managedDeviceOverview"
+                    #endregion
+
+                    #region Generating Data
+                    $OutObj = @()
+                    foreach($item in $mdo.deviceOperatingSystemSummary.GetEnumerator()){
+                        $OutObj += New-Object PSObject -Property @{
+			                'Operating System' = $OperatingSystemList."$($item.key.Replace('Count',''))"
+			                'Count' = $item.Value
+		                }
+                    }
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Operating System', 'Count'
+				        Columns = 'Operating System', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($outobj.count -gt 0) {
+		                $outobj | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Compliance
+                $SectionName = "Compliance"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
                     #region Collect Data
                     #endregion
 
@@ -1961,50 +1031,1143 @@ try {
 		            $TableParams = @{
                         Name = $SectionName
                         List = $false
-                        Header = 'Platform', 'Name', 'Policy Type', 'Target', 'Last Modified', 'Assignments'
-				        Columns = 'platforms', 'name', 'templatereference', 'technologies', 'lastModifiedDateTime', 'Assignments'
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
                     }
 		            $TableParams['Caption'] = "- $($TableParams.Name)"
-                    if ($avAssignmentList.count -gt 0) {
-		                $avAssignmentList | select @{Name="platforms";Expression={$platformsList."$($_.platforms)"}}, name, technologies,lastModifiedDateTime, @{Name="templatereference";Expression={$_.templateReference.templateDisplayName}}, Assignments | Table @TableParams
+                    if ($mdmList.value.count -gt 0) {
+                        #$mdmList.value | Group-Object complianceState does not work as expected. it returns name = "" so fixing with foreach
+		                #$mdmList.value | Group-Object complianceState | Table @TableParams
+                        $mdmListFixed | Group-Object complianceState | Table @TableParams
                     } else {
                         Paragraph "No $($sectionName) found"
                     }
                     #endregion
+                }
+                #endregion
 
-                    #region Anti-Virus Policies Definition
+                #region Ownership
+                $SectionName = "Ownership"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($mdmList.value.count -gt 0) {
+                        #$mdmList.value | Group-Object ownerType does not work as expected. it returns name = "" so fixing with foreach
+		                #$mdmList.value | Group-Object ownerType | Table @TableParams
+                        $mdmListFixed | Group-Object ownerType | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Join Type
+                $SectionName = "Join Type"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($mdmList.value.count -gt 0) {
+                        #$mdmList.value | Group-Object joinType does not work as expected. it returns name = "" so fixing with foreach
+		                #$mdmList.value | Group-Object joinType | Table @TableParams
+                        $mdmListFixed | Group-Object joinType | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Autopilot Enrolled
+                $SectionName = "Autopilot Enrolled"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($mdmList.value.count -gt 0) {
+                        #$mdmList.value | Group-Object autopilotEnrolled does not work as expected. it returns name = "" so fixing with foreach
+		                #$mdmList.value | Group-Object autopilotEnrolled | Table @TableParams
+                        $mdmListFixed | Group-Object autopilotEnrolled | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion        
+
+                #region Managed By
+                $SectionName = "Managed By"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($mdmList.value.count -gt 0) {
+                        #$mdmList.value | Group-Object managementAgent does not work as expected. it returns name = "" so fixing with foreach
+		                #$mdmList.value | Group-Object managementAgent | Table @TableParams
+                        $mdmListFixed | Group-Object managementAgent | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+		            #endregion
+                }
+                #endregion
+
+                #region Management State
+                $SectionName = "Management State"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($mdmList.value.count -gt 0) {
+                        #$mdmList.value | Group-Object managementState does not work as expected. it returns name = "" so fixing with foreach
+		                #$mdmList.value | Group-Object managementState | Table @TableParams
+                        $mdmListFixed | Group-Object managementState | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion     
+
+                #region Operating System Name/Version
+                $SectionName = "Operating System Name/Version"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($mdmList.value.count -gt 0) {
+                        #$mdmList.value | Group-Object operatingSystem,osVersion does not work as expected. it returns name = "" so fixing with foreach
+		                #$mdmList.value | Group-Object operatingSystem,osVersion | Table @TableParams
+                        $mdmListFixed | Group-Object operatingSystem,osVersion | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Hardware Model
+                $SectionName = "Hardware Model"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 80, 20
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($mdmList.value.count -gt 0) {
+                        #$mdmList.value | Group-Object model does not work as expected. it returns name = "" so fixing with foreach
+		                #$mdmList.value | Group-Object model | Table @TableParams
+                        $mdmListFixed | Group-Object model | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Device actions status
+                $SectionName = "Device actions status"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($das.count -gt 0) {
+		                $das | Group-Object Action,Status | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Device clean-up rules
+                $SectionName = "Device clean-up rules"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/managedDeviceCleanupSettings"
+                    ##Todo: use v1.0 version when available
+                    $OutObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/managedDeviceCleanupSettings"
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $true
+                        ColumnWidths = 80, 20
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($OutObj.count -gt 0) {
+		                $OutObj | select @{Name="Delete devices based on last check-in date";Expression = { $null -ne $_.deviceInactivityBeforeRetirementInDays }}, @{Name="Delete devices that haven't checked in for this many days";Expression = { $_.deviceInactivityBeforeRetirementInDays }} | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Device Categories
+                $SectionName = "Device Categories"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    Write-RFLLog -Message "        MSGraph: deviceManagement/deviceCategories"
+                    $OutObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/deviceCategories"
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($OutObj.Value.Count -gt 0) {
+    		            $OutObj.Value | select @{Name="Display Name";Expression = { $_.displayName }}, @{Name="Description";Expression = { $_.description }} | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Device Filters
+                $SectionName = "Device Filters"
+                ##Todo: add filters scope and rules. Subsection?!
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/assignmentFilters"
+                    ##Todo: use v1.0 version when available
+                    $OutObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/assignmentFilters"
+                    $TableOut = @()
+                    $TableOut += $outobj.value | Where-Object {$_.assignmentFilterManagementType -eq 'devices'}
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 45, 30, 25
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($TableOut.Count -gt 0) {
+    		            $TableOut | select @{Name="Display Name";Expression = { $_.displayName }}, @{Name="Platform";Expression = { $platformsList."$($_.platform)"}}, @{Name="Last modified";Expression = { $_.lastModifiedDateTime }} | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region todo:
+                <#
+            
+                #>
+                #endregion
+            }
+        }
+        #endregion
+
+        #region Users
+        $sectionName = 'Users'
+        if ($SectionUsers -eq $false) {
+	        Write-RFLLog -Message "Exporting Section '$($sectionName)' is being ignored as the parameter to export is set to false" -LogLevel 2
+        } else {
+            PageBreak
+	        Write-RFLLog -Message "Starting Section '$($sectionName)'"
+	        Section -Style Heading1 $sectionName {
+                #Paragraph " "
+		        #BlankLine
+
+                #region Data Used by the next few sections
+                Write-RFLLog -Message "    MSGraph (Beta): users"
+                ##Todo: use v1.0 version when userType, accountEnabled, onPremisesSyncEnabled, passwordPolicies, usageLocation are available 
+                $userList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/users"
+
+                #$userList.value | Group-Object userType - does not work as expected. it returns name = "" so fixing with foreach
+                $userListFixed = @()
+                foreach($item in $userList.value) {
+                    $userListFixed += New-Object PSObject -Property @{
+                        id = $item.id
+                        userType = $item.userType
+                        accountEnabled = $item.accountEnabled
+                        onPremisesSyncEnabled = $item.onPremisesSyncEnabled
+                        passwordPolicies = $item.passwordPolicies
+                        usageLocation = $item.usageLocation
+                    }
+                }
+                #endregion
+
+                #region User Type
+                $SectionName = "User Type"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($userList.value.count -gt 0) {
+                        #$userList.value | Group-Object userType does not work as expected. it returns name = "" so fixing with foreach
+		                #$userList.value | Group-Object userType | Table @TableParams
+                        $userListFixed | Group-Object userType | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region account status
+                $SectionName = "Account Enabled Status"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($userList.value.count -gt 0) {
+                        #$userList.value | Group-Object accountEnabled does not work as expected. it returns name = "" so fixing with foreach
+		                #$userList.value | Group-Object accountEnabled | Table @TableParams
+                        $userListFixed | Group-Object accountEnabled | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region onprem sync enabled
+                $SectionName = "onprem sync enabled"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($userList.value.count -gt 0) {
+                        #$userList.value | Group-Object onPremisesSyncEnabled does not work as expected. it returns name = "" so fixing with foreach
+		                #$userList.value | Group-Object onPremisesSyncEnabled | Table @TableParams
+                        $userListFixed | Group-Object onPremisesSyncEnabled | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region password Policies
+                $SectionName = "password Policies"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($userList.value.count -gt 0) {
+                        #$userList.value | Group-Object passwordPolicies does not work as expected. it returns name = "" so fixing with foreach
+		                #$userList.value | Group-Object passwordPolicies | Table @TableParams
+                        $userListFixed | Group-Object passwordPolicies | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region usage Location
+                $SectionName = "usage Location"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($userList.value.count -gt 0) {
+                        #$userList.value | Group-Object usageLocation does not work as expected. it returns name = "" so fixing with foreach
+		                #$userList.value | Group-Object usageLocation | Table @TableParams
+                        $userListFixed | Group-Object usageLocation | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region identities
+                $SectionName = "identities"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    $userIdentities = @()
+                    foreach($item in $userList.value) {
+                        foreach($identityItem in $item.identities) {
+                            $userIdentities += New-Object PSObject -Property @{ 'issuer' = $identityItem.issuer }
+                        }
+                    }
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Name', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($userIdentities.count -gt 0) {
+		                $userIdentities | Group-Object issuer | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region registeredDevices
+                $SectionName = "Registered Devices"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    Write-RFLLog -Message "        MSGraph: users/{id}/registeredDevices"
+                    $regDevices = @()
+                    foreach($item in $userList.value) {
+                        $userDevices = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/users/{$($item.id)}/registeredDevices"
+                        $regDevices += New-Object PSObject -Property @{ 
+                            'user' = $item.userPrincipalName
+                            'count' = $userDevices.value.count
+                        }
+                    }
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Number of Registered Devices', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($regDevices.count -gt 0) {
+		                $regDevices | Group-Object count | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Authentication Method
+                $SectionName = "Authentication Method"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    Write-RFLLog -Message "        MSGraph: users/{UPN}/authentication/methods"
+                    $authUsers = @()
+                    foreach($item in $userList.value) {
+                        $authMethods = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/users/$($item.userPrincipalName)/authentication/methods"
+                        foreach($authItem in $authMethods.value) {
+                            $authUsers += New-Object PSObject -Property @{ 
+                                'user' = $item.userPrincipalName
+                                'Method' = $AuthenticationMethodList."$($authItem.'@odata.type')"
+                            }
+                        }
+                    }
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Authentication Method', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($authUsers.count -gt 0) {
+		                $authUsers | Select-Object 'user','method' -Unique | Group-Object Method | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }        
+                #endregion
+
+                #region MFA Enabled
+                $SectionName = "MFA Enabled"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    $mfaUsers = @()
+                    foreach($item in $userList.value) {
+                        $mfaUsers += New-Object PSObject -Property @{
+                            'user' = $item.userPrincipalName
+                            'MFA Status' = (($authUsers | Where-Object {($_.user -eq $item.userPrincipalName) -and ($_.Method -ne 'Password')} | Measure-Object).Count -gt 0)
+                        }
+                    }
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'MFA Enabled', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($mfaUsers.count -gt 0) {
+		                $mfaUsers | Group-Object 'MFA Status' | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region last signin
+                $SectionName = "Last Sign In"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    Write-RFLLog -Message "        MSGraph: users?`$select=displayName,signInActivity"
+                    $userLastLogin = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/users?`$select=displayName,signInActivity"
+                    $outobj = @()
+                    foreach($item in $userLastLogin.value) {
+                        $Obj = New-Object PSObject -Property @{
+                            'user' = $item.displayName
+                            'datetime' = $item.signInActivity.lastSignInDateTime
+                            'DaysDifference' = 0
+                            'DaysRange' = ''                    
+                        }
+
+                        if ($null -eq $item.signInActivity.lastSignInDateTime) {
+                            $obj.DaysDifference = -1
+                        } else {
+                            $obj.DaysDifference = (New-TimeSpan -End (get-date) -Start ($item.signInActivity.lastSignInDateTime)).Days
+                        }
+
+                        $obj.DaysRange = switch ($obj.DaysDifference) {
+                            -1 { 'Never' }
+                            0 { 'Today' }
+                            1..7 { 'Last 7 Days'}
+                            8..14 { 'Last 2 Weeks' }
+                            15..30 { 'This month' }
+                            31..90 { 'Last 3 months' }
+                            default { 'Over 90 days' }
+                        }
+                        $outobj += $obj
+                    }
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Last Sign in', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($outobj.count -gt 0) {
+		                $outobj | Group-Object DaysRange | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region todo:
+                <#
+                password reset 
+                user settings
+                #>
+                #endregion
+
+            }
+        }
+        #endregion
+
+        #region Groups
+        $sectionName = 'Groups'
+        if ($SectionGroups -eq $false) {
+	        Write-RFLLog -Message "Exporting Section '$($sectionName)' is being ignored as the parameter to export is set to false" -LogLevel 2
+        } else {
+            PageBreak
+	        Write-RFLLog -Message "Starting Section '$($sectionName)'"
+	        Section -Style Heading1 $sectionName {
+                #Paragraph " "
+		        #BlankLine
+
+                #region Data Used by the next few sections
+                Write-RFLLog -Message "    MSGraph: groups"
+                $groupList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/groups"
+
+                Write-RFLLog -Message "    MSGraph: groups/{id}/members"
+                $groupInfo = @()
+                foreach($item in $groupList.Value) {
+                    $members = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/groups/{$($item.id)}/members"
+                    $owners = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/groups/{$($item.id)}/owners"
+
+                    $groupInfo += New-Object PSObject -Property @{
+                        'id' = $item.id
+                        'groupname' = $item.displayName
+                        'members' = $members.Value.count
+                        'owners' = $owners.Value.count
+                    }
+                }
+                #endregion
+
+                #region Group Membership Type
+                $SectionName = "Group Membership Type"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Group Membership Type', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($groupList.value.count -gt 0) {
+		                $groupList.value | select id, @{Name="GroupType";Expression = { if ($null -eq $_.membershipRule) { 'Assigned' } else {'Dynamic'} }} | Group-Object GroupType | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Group Type
+                $SectionName = "Group Type"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Group Type', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($groupList.value.count -gt 0) {
+		                $groupList.value | select id, @{Name="GroupType";Expression = { if ($false -eq $_.mailEnabled) { 'Security' } else {'Microsoft 365'} }} | Group-Object GroupType | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Group Source
+                $SectionName = "Group Source"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Source', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($groupList.value.count -gt 0) {
+		                $groupList.value | select id, @{Name="GroupSource";Expression = { if ($null -eq $_.onPremisesLastSyncDateTime) { 'Cloud' } else {'On Premises'} }} | Group-Object GroupSource | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Group Membership Count
+                $SectionName = "Group Membership Count"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Membership Count', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($groupInfo.count -gt 0) {
+		                $groupInfo | Group-Object Members | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Group Owners Count
+                $SectionName = "Group Owners Count"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Ownership Count', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($groupInfo.count -gt 0) {
+		                $groupInfo | Group-Object owners | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region todo:
+                <#
+                #>
+                #endregion
+            }
+        }
+        #endregion
+
+        #region Apps
+        $sectionName = 'Apps'
+        if ($SectionApps -eq $false) {
+	        Write-RFLLog -Message "Exporting Section '$($sectionName)' is being ignored as the parameter to export is set to false" -LogLevel 2
+        } else {
+            PageBreak
+	        Write-RFLLog -Message "Starting Section '$($sectionName)'"
+	        Section -Style Heading1 $sectionName {
+                #Paragraph " "
+		        #BlankLine
+
+                #region Data Used by the next few sections
+                ##Todo: use v1.0 version when isAssigned is available 
+                Write-RFLLog -Message "    MSGraph (Beta): deviceAppManagement/mobileApps"
+                $AppList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceAppManagement/mobileApps"
+
+                Write-RFLLog -Message "    MSGraph (Beta): deviceAppManagement/mobileApps/{id}/installSummary"
+                $AppInstallList = @()
+                foreach($item in $AppList.Value) {
+                    ##Todo: use v1.0 version when available
+                    $installInfo = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceAppManagement/mobileApps/$($item.id)/installSummary"
+                    $AppInstallList += New-Object PSObject -Property @{
+                        'platform' = $AppTypeList."$($item.'@odata.type')"
+                        'id' = $item.id
+                        'installedDeviceCount' = $installInfo.installedDeviceCount
+                        'failedDeviceCount' = $installInfo.failedDeviceCount
+                        'notApplicableDeviceCount' = $installInfo.notApplicableDeviceCount
+                        'notInstalledDeviceCount' = $installInfo.notInstalledDeviceCount
+                        'pendingInstallDeviceCount' = $installInfo.pendingInstallDeviceCount
+                        'installedUserCount' = $installInfo.installedUserCount
+                        'notApplicableUserCount' = $installInfo.notApplicableUserCount
+                        'failedUserCount' = $installInfo.failedUserCount
+                        'notInstalledUserCount' = $installInfo.notInstalledUserCount
+                        'pendingInstallUserCount' = $installInfo.pendingInstallUserCount
+                    }
+                }
+                #endregion
+
+                #region Apps Per Type
+                $SectionName = "Apps Type"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'App Type', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($AppList.value.count -gt 0) {
+		                $AppList.value | select id, @{Name="AppType";Expression = { $AppTypeList."$($_.'@odata.type')" }} | Group-Object AppType | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Assigned Apps
+                $SectionName = "Assigned Apps Status"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 40, 60
+                        Header = 'Assigned Status', 'Count'
+				        Columns = 'Name', 'Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($AppList.value.count -gt 0) {
+		                $AppList.value | Group-Object isAssigned | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region App Installation Status
+                $SectionName = "Apps Installation Status"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 25, 25, 25, 25
+                        Header = 'Platform', 'Application Count', 'Failed Device Count', 'Failed User Count'
+				        Columns = 'Platform', 'Application Count', 'Failed Device Count', 'Failed User Count'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($AppInstallList.count -gt 0) {
+		                $AppInstallList | Group-Object platform,failedDeviceCount,failedUserCount | select @{Name="Application Count";Expression={$_.Count}}, @{Name="platform";Expression={$_.Group[0].Platform}}, @{Name="Failed Device Count";Expression={$_.group[0].failedDeviceCount}}, @{Name="Failed User Count";Expression={$_.group[0].failedUserCount}} | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region App categories
+                $SectionName = "App categories"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    ##Todo: use v1.0 version when available
+                    Write-RFLLog -Message "    MSGraph (Beta): deviceAppManagement/mobileAppCategories"
+                    $OutObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceAppManagement/mobileAppCategories"
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 100
+                        Header = 'Name'
+				        Columns = 'Name'
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($OutObj.value.count -gt 0) {
+		                $OutObj.value | select @{Name="Name";Expression={$_.displayname}} | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region App Filters
+                $SectionName = "App Filters"
+                ##Todo: add filters scope and rules. Subsection?!
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/assignmentFilters"
+                    ##Todo: use v1.0 version when available
+                    $OutObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/assignmentFilters"
+                    $TableOut = @()
+                    $TableOut += $outobj.value | Where-Object {$_.assignmentFilterManagementType -eq 'apps'}
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 45, 30, 25
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($TableOut.Count -gt 0) {
+    		            $TableOut | select @{Name="Display Name";Expression = { $_.displayName }}, @{Name="Platform";Expression = { $platformsList."$($_.platform)"}}, @{Name="Last modified";Expression = { $_.lastModifiedDateTime }} | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region todo:
+                <# 
+                app protection policy
+                app configuration policy
+                ios app provisioning profiles
+                s mode supplemental policies
+                policies for office apps
+                App selective wipe
+
+                ebooks
+                ebooks categories
+                #>
+                #endregion
+
+            }
+        }
+        #endregion
+
+        #region Endpoint security
+        $sectionName = 'Endpoint security'
+        if ($SectionEndpointSecurity -eq $false) {
+	        Write-RFLLog -Message "Exporting Section '$($sectionName)' is being ignored as the parameter to export is set to false" -LogLevel 2
+        } else {
+            PageBreak
+	        Write-RFLLog -Message "Starting Section '$($sectionName)'"
+	        Section -Style Heading1 $sectionName {
+                #Paragraph " "
+		        #BlankLine
+
+                #region Anti-Virus
+                $SectionName = "Anti-Virus"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Data Used by the next few sections
+                    Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/configurationPolicies?`$select=id,name,description,platforms,lastModifiedDateTime,technologies,settingCount,roleScopeTagIds,isAssigned,templateReference&`$filter=templateReference/TemplateFamily eq 'endpointSecurityAntivirus'"
+                    ##Todo: use v1.0 version when available
+                    $avList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies?`$select=id,name,description,platforms,lastModifiedDateTime,technologies,settingCount,roleScopeTagIds,isAssigned,templateReference&`$filter=templateReference/TemplateFamily eq 'endpointSecurityAntivirus'"
+
+                    Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/configurationPolicies/{1}/assignments"
+                    $avAssignmentList = @()
                     foreach($item in $avList.value) {
-                        $SectionName = "Policy: $($item.Name)"
-                        Write-RFLLog -Message "        Starting SubSection '$($sectionName)'"
-                        Section -Style Heading4 $SectionName {
-                            #region Collect Data
-                            Write-RFLLog -Message "            MSGraph (Beta): deviceManagement/configurationPolicies/{id}/settings?`$expand=settingDefinitions&top=1000"
-                            ##Todo: use v1.0 version when available
-                            $polDef = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies/$($item.id)/settings?`$expand=settingDefinitions&top=1000"
-                            ##Todo: use v1.0 version when available
-                            $setDef = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicyTemplates/$($item.templateReference.templateId)/settingTemplates?`$expand=settingDefinitions&top=1000"
+                        ##Todo: use v1.0 version when available
+                        $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies/$($item.id)/assignments"
+                        $groupInfo = @()
+                        foreach($assignment in $assignments.Value.target.groupID) {
+                            $groupInfo += Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/groups/$($assignment)"
+                        }
+
+                        $avAssignmentList += New-Object PSObject -Property @{
+                            'platforms' = $item.platforms
+                            'name' = $item.name
+                            'templatereference' = $item.templatereference
+                            'technologies' = $item.technologies
+                            'lastModifiedDateTime' = $item.lastModifiedDateTime
+                            'Assignments' = $groupInfo.displayName -join ', '
+		                }
+                    }
+                    #endregion
+
+                    #region Malware Overview
+                    $SectionName = "Malware Overview"
+                    Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                    Section -Style Heading3 $SectionName {
+                        #region Collect Data
+                        Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/deviceProtectionOverview"
+                        ##Todo: use v1.0 version when available
+                        $objOut = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/deviceProtectionOverview"
+                        #endregion
+
+                        #region Generating Data
+		                $TableParams = @{
+                            Name = $SectionName
+                            List = $true
+                            ColumnWidths = 60, 40
+                        }
+		                $TableParams['Caption'] = "- $($TableParams.Name)"
+                        if ($null -ne $objOut -gt 0) {
+		                    $objOut | select  @{Name="Pending Signature update";Expression={$_.pendingSignatureUpdateDeviceCount}}, @{Name="Pending full scan";Expression={$_.pendingFullScanDeviceCount}}, @{Name="Pending Quick scan";Expression={$_.pendingQuickScanDeviceCount}}, @{Name="Pending restart";Expression={$_.pendingRestartDeviceCount}}, @{Name="Pending manual steps";Expression={$_.pendingManualStepsDeviceCount}}, @{Name="Pending offline scan";Expression={$_.pendingOfflineScanDeviceCount}}, @{Name="Critical failures";Expression={$_.criticalFailuresDeviceCount}}, @{Name="Inactive agent";Expression={$_.inactiveThreatAgentDeviceCount}}, @{Name="Unknown status";Expression={$_.unknownStateThreatAgentDeviceCount}} | Table @TableParams 
+                        } else {
+                            Paragraph "No $($sectionName) found"
+                        }
+                        #endregion
+                    }
+                    #endregion
+
+                    #region Anti-Virus Policies
+                    $SectionName = "Anti-Virus Policies"
+                    Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                    Section -Style Heading3 $SectionName {
+                        #region Collect Data
+                        #endregion
+
+                        #region Generating Data
+		                $TableParams = @{
+                            Name = $SectionName
+                            List = $false
+                            Header = 'Platform', 'Name', 'Policy Type', 'Target', 'Last Modified', 'Assignments'
+				            Columns = 'platforms', 'name', 'templatereference', 'technologies', 'lastModifiedDateTime', 'Assignments'
+                        }
+		                $TableParams['Caption'] = "- $($TableParams.Name)"
+                        if ($avAssignmentList.count -gt 0) {
+		                    $avAssignmentList | select @{Name="platforms";Expression={$platformsList."$($_.platforms)"}}, name, technologies,lastModifiedDateTime, @{Name="templatereference";Expression={$_.templateReference.templateDisplayName}}, Assignments | Table @TableParams
+                        } else {
+                            Paragraph "No $($sectionName) found"
+                        }
+                        #endregion
+
+                        #region Anti-Virus Policies Definition
+                        foreach($item in $avList.value) {
+                            $SectionName = "Policy: $($item.Name)"
+                            Write-RFLLog -Message "        Starting SubSection '$($sectionName)'"
+                            Section -Style Heading4 $SectionName {
+                                #region Collect Data
+                                Write-RFLLog -Message "            MSGraph (Beta): deviceManagement/configurationPolicies/{id}/settings?`$expand=settingDefinitions&top=1000"
+                                ##Todo: use v1.0 version when available
+                                $polDef = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies/$($item.id)/settings?`$expand=settingDefinitions&top=1000"
+                                ##Todo: use v1.0 version when available
+                                $setDef = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicyTemplates/$($item.templateReference.templateId)/settingTemplates?`$expand=settingDefinitions&top=1000"
                     
-                            $outobj = @()
-                            foreach($polItem in $polDef.Value) {
-                                if ($null -eq $politem.settingInstance.groupSettingCollectionValue.children) {
-                                    $setDefItem = $setdef.value.settingdefinitions | Where-Object {$_.id -eq $politem.settingInstance.settingDefinitionId}
-                                    $policeDef = New-Object PSObject -Property @{
-			                            'SettingName' = $setDefItem.displayName
-			                            'SettingMDM' = '{0}{1}' -f $setDefItem.baseUri, $setDefItem.offsetUri
-			                            'Value' = 
-                                            if (($null -eq ($polItem.settingInstance.choiceSettingValue)) -and ($null -eq $polItem.settingInstance.simpleSettingCollectionValue)) { 
-                                                $polItem.settingInstance.simpleSettingValue.value 
-                                            } elseif ($null -eq $polItem.settingInstance.simpleSettingCollectionValue) { 
-                                                $polItem.settingInstance.choiceSettingValue.value.replace("$($polItem.settingInstance.settingDefinitionId)_",'') 
-                                            } else {
-                                                $polItem.settingInstance.simpleSettingCollectionValue.value -join ', '
-                                            }
-                                
-		                            }
-                                    $outobj += $policeDef
-                                } else {
-                                    foreach($polChild in $politem.settingInstance.groupSettingCollectionValue.children) {
-                                        $setDefItem = $setdef.value.settingdefinitions | Where-Object {$_.id -eq $polChild.settingDefinitionId}
+                                $outobj = @()
+                                foreach($polItem in $polDef.Value) {
+                                    if ($null -eq $politem.settingInstance.groupSettingCollectionValue.children) {
+                                        $setDefItem = $setdef.value.settingdefinitions | Where-Object {$_.id -eq $politem.settingInstance.settingDefinitionId}
                                         $policeDef = New-Object PSObject -Property @{
 			                                'SettingName' = $setDefItem.displayName
 			                                'SettingMDM' = '{0}{1}' -f $setDefItem.baseUri, $setDefItem.offsetUri
@@ -2016,76 +2179,98 @@ try {
                                                 } else {
                                                     $polItem.settingInstance.simpleSettingCollectionValue.value -join ', '
                                                 }
-                                    
+                                
 		                                }
                                         $outobj += $policeDef
+                                    } else {
+                                        foreach($polChild in $politem.settingInstance.groupSettingCollectionValue.children) {
+                                            $setDefItem = $setdef.value.settingdefinitions | Where-Object {$_.id -eq $polChild.settingDefinitionId}
+                                            $policeDef = New-Object PSObject -Property @{
+			                                    'SettingName' = $setDefItem.displayName
+			                                    'SettingMDM' = '{0}{1}' -f $setDefItem.baseUri, $setDefItem.offsetUri
+			                                    'Value' = 
+                                                    if (($null -eq ($polItem.settingInstance.choiceSettingValue)) -and ($null -eq $polItem.settingInstance.simpleSettingCollectionValue)) { 
+                                                        $polItem.settingInstance.simpleSettingValue.value 
+                                                    } elseif ($null -eq $polItem.settingInstance.simpleSettingCollectionValue) { 
+                                                        $polItem.settingInstance.choiceSettingValue.value.replace("$($polItem.settingInstance.settingDefinitionId)_",'') 
+                                                    } else {
+                                                        $polItem.settingInstance.simpleSettingCollectionValue.value -join ', '
+                                                    }
+                                    
+		                                    }
+                                            $outobj += $policeDef
+                                        }
                                     }
                                 }
-                            }
-                            #endregion
+                                #endregion
 
-                            #region Generating Data
-		                    $TableParams = @{
-                                Name = $SectionName
-                                List = $false
-                                ColumnWidths = 30, 50, 20
-                                Header = 'Setting Name', 'MDM Path', 'Value'
-				                Columns = 'SettingName', 'SettingMDM', 'Value'
+                                #region Generating Data
+		                        $TableParams = @{
+                                    Name = $SectionName
+                                    List = $false
+                                    ColumnWidths = 30, 50, 20
+                                    Header = 'Setting Name', 'MDM Path', 'Value'
+				                    Columns = 'SettingName', 'SettingMDM', 'Value'
+                                }
+		                        $TableParams['Caption'] = "- $($TableParams.Name)"
+                                if ($polDef.value.count -gt 0) {
+		                            $outobj | Table @TableParams
+                                } else {
+                                    Paragraph "No $($sectionName) found"
+                                }
+                                #endregion
                             }
-		                    $TableParams['Caption'] = "- $($TableParams.Name)"
-                            if ($polDef.value.count -gt 0) {
-		                        $outobj | Table @TableParams
-                            } else {
-                                Paragraph "No $($sectionName) found"
-                            }
-                            #endregion
                         }
+                        #endregion
                     }
                     #endregion
                 }
                 #endregion
+
+                #region todo:
+                <#
+                disk encryption
+                firewall
+                endpoint privilege management
+                endpoint detection and response
+                attack surface reduction
+                account protection
+                device compliance
+                conditional access
+                #>
+                #endregion
+
             }
-            #endregion
-
-            #region todo:
-            <#
-            disk encryption
-            firewall
-            endpoint privilege management
-            endpoint detection and response
-            attack surface reduction
-            account protection
-            device compliance
-            conditional access
-            #>
-            #endregion
-
         }
         #endregion
 
         #region Policies
-        PageBreak
         $sectionName = 'Policies'
-	    Write-RFLLog -Message "Starting Section '$($sectionName)'"
-	    Section -Style Heading1 $sectionName {
-            #Paragraph " "
-		    #BlankLine
+        if ($SectionEndpointSecurity -eq $false) {
+	        Write-RFLLog -Message "Exporting Section '$($sectionName)' is being ignored as the parameter to export is set to false" -LogLevel 2
+        } else {
+            PageBreak
+	        Write-RFLLog -Message "Starting Section '$($sectionName)'"
+	        Section -Style Heading1 $sectionName {
+                #Paragraph " "
+		        #BlankLine
 
-            #region todo:
-            <#
-            compliance policies
-            conditionl access
-            configuration policies
-            scripts
-            Group policy analytics
-            update rings for W10
-            feature updates for W10
-            quality updates for W10
-            update policies for ios/ipados
-            update policies for macOS
-            #>
-            #endregion
+                #region todo:
+                <#
+                compliance policies
+                conditionl access
+                configuration policies
+                scripts
+                Group policy analytics
+                update rings for W10
+                feature updates for W10
+                quality updates for W10
+                update policies for ios/ipados
+                update policies for macOS
+                #>
+                #endregion
 
+            }
         }
         #endregion
     }
