@@ -57,7 +57,7 @@
         Name: ExportIntuneData.ps1
         Author: Raphael Perez
         DateCreated: 17 May 2023 (v0.1)
-        LatestUpdate: 24 May 2023 (v0.2)
+        LatestUpdate: 16 June 2023 (v0.3)
         Website: http://www.endpointmanagers.com
         WebSite: https://github.com/dotraphael/RFL.Microsoft.Intune
         Twitter: @dotraphael
@@ -67,6 +67,13 @@
             - Added logging to Graph Connection Info
             - Added Filters section (apps and devices)
             - Added Apps Category Section
+        Update: 16 June 2023 (v0.3)
+            - Added more platformsList
+            - Added templateIDList Enumeration
+            - Added Ebooks Section
+            - Added Ebooks category Section
+            - Added Disk Encryption section
+            - Added Firewall section (#Todo: ConfigMgr firewall policies)
 
         Create Azure AD Application
         1. create a Azure AD Application - https://learn.microsoft.com/en-us/graph/toolkit/get-started/add-aad-app-registration
@@ -380,11 +387,20 @@ $platformsList = @{
     'macOS' = 'macOS';
     'androidForWork' = 'Android Enterprise';
     'iOSMobileApplicationManagement' = 'iOS/iPadOS';
+    'd1174162-1dd2-4976-affc-6667049ab0ae' = 'Windows 10 and later';
+    'a239407c-698d-4ef8-b314-e3ae409204b8' = 'macOS';
+    '5340aa10-47a8-4e67-893f-690984e4d5da' = 'macOS';
 }
+
+$templateIDList = @{
+    'd1174162-1dd2-4976-affc-6667049ab0ae' = 'BitLocker';
+    'a239407c-698d-4ef8-b314-e3ae409204b8' = 'FileVault';
+}
+
 #endregion
 
 #region Variables
-$script:ScriptVersion = '0.2'
+$script:ScriptVersion = '0.3'
 $script:LogFilePath = $env:Temp
 $Script:LogFileFileName = 'ExportIntuneData.log'
 $script:ScriptLogFilePath = "$($script:LogFilePath)\$($Script:LogFileFileName)"
@@ -2003,8 +2019,6 @@ try {
                         Name = $SectionName
                         List = $false
                         ColumnWidths = 100
-                        Header = 'Name'
-				        Columns = 'Name'
                     }
 		            $TableParams['Caption'] = "- $($TableParams.Name)"
                     if ($OutObj.value.count -gt 0) {
@@ -2045,6 +2059,58 @@ try {
                 }
                 #endregion
 
+                #region Ebook
+                $SectionName = "Ebook"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    Write-RFLLog -Message "        MSGraph (Beta): deviceAppManagement/managedEBooks"
+                    ##Todo: use v1.0 version when available
+                    $OutObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceAppManagement/managedEBooks"
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 45, 30, 25
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($OutObj.value.Count -gt 0) {
+    		            $OutObj.value | select @{Name="Display Name";Expression = { $_.displayName }}, @{Name="publisher";Expression = { $_.publisher}}, @{Name="Information Url";Expression = { $_.informationUrl }} | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
+
+                #region Ebook categories
+                $SectionName = "Ebook categories"
+                ##Todo: add filters scope and rules. Subsection?!
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    Write-RFLLog -Message "        MSGraph (Beta): deviceAppManagement/managedEBookCategories"
+                    ##Todo: use v1.0 version when available
+                    $OutObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceAppManagement/managedEBookCategories"
+                    #endregion
+
+                    #region Generating Data
+		            $TableParams = @{
+                        Name = $SectionName
+                        List = $false
+                        ColumnWidths = 100
+                    }
+		            $TableParams['Caption'] = "- $($TableParams.Name)"
+                    if ($OutObj.Value.Count -gt 0) {
+    		            $OutObj.Value | select @{Name="Display Name";Expression = { $_.displayName }} | Table @TableParams
+                    } else {
+                        Paragraph "No $($sectionName) found"
+                    }
+                    #endregion
+                }
+                #endregion
                 #region todo:
                 <# 
                 app protection policy
@@ -2054,8 +2120,8 @@ try {
                 policies for office apps
                 App selective wipe
 
-                ebooks
-                ebooks categories
+                apple vpp tokens
+                ebook installation status
                 #>
                 #endregion
 
@@ -2079,6 +2145,7 @@ try {
                 Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
                 Section -Style Heading2 $SectionName {
                     #region Data Used by the next few sections
+                    #region AntiVirus
                     Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/configurationPolicies?`$select=id,name,description,platforms,lastModifiedDateTime,technologies,settingCount,roleScopeTagIds,isAssigned,templateReference&`$filter=templateReference/TemplateFamily eq 'endpointSecurityAntivirus'"
                     ##Todo: use v1.0 version when available
                     $avList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies?`$select=id,name,description,platforms,lastModifiedDateTime,technologies,settingCount,roleScopeTagIds,isAssigned,templateReference&`$filter=templateReference/TemplateFamily eq 'endpointSecurityAntivirus'"
@@ -2102,6 +2169,7 @@ try {
                             'Assignments' = $groupInfo.displayName -join ', '
 		                }
                     }
+                    #endregion
                     #endregion
 
                     #region Malware Overview
@@ -2213,7 +2281,341 @@ try {
 				                    Columns = 'SettingName', 'SettingMDM', 'Value'
                                 }
 		                        $TableParams['Caption'] = "- $($TableParams.Name)"
-                                if ($polDef.value.count -gt 0) {
+                                if ($outobj.count -gt 0) {
+		                            $outobj | Table @TableParams
+                                } else {
+                                    Paragraph "No $($sectionName) found"
+                                }
+                                #endregion
+                            }
+                        }
+                        #endregion
+                    }
+                    #endregion
+
+                    #region Disk Encryption 
+                    $SectionName = "Disk Encryption"
+                    Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                    Section -Style Heading3 $SectionName {
+                        #region Collect Data
+                        $diskencryptionList = @()
+
+                        ##Todo: use v1.0 version when available
+                        ##Todo: always return 0, so not using at the moment
+                        #Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/configurationPolicies?`$select=id,name,description,platforms,lastModifiedDateTime,technologies,settingCount,roleScopeTagIds,isAssigned,templateReference&`$filter=templateReference/TemplateFamily eq 'endpointSecurityDiskEncryption'"
+                        #$diskencryptionListTemplate = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies?`$select=id,name,description,platforms,lastModifiedDateTime,technologies,settingCount,roleScopeTagIds,isAssigned,templateReference&`$filter=templateReference/TemplateFamily eq 'endpointSecurityDiskEncryption'"
+                        #foreach($item in $diskencryptionListTemplate.value) {
+                            ##Todo: not in use. mine always return 0
+                        #}
+
+                        Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/intents?`$filter=templateId eq 'd1174162-1dd2-4976-affc-6667049ab0ae' or templateId eq 'a239407c-698d-4ef8-b314-e3ae409204b8'"
+                        ##Todo: use v1.0 version when available
+                        $diskencryptionListIntents = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/intents?`$filter=templateId eq 'd1174162-1dd2-4976-affc-6667049ab0ae' or templateId eq 'a239407c-698d-4ef8-b314-e3ae409204b8'"
+
+                        foreach($item in $diskencryptionListIntents.value) {
+                            ##Todo: use v1.0 version when available
+                            $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/intents/$($item.id)/assignments"
+                            $groupInfo = @()
+                            foreach($assignment in $assignments.Value.target.groupID) {
+                                ##Todo: use v1.0 version when available
+                                $groupInfo += Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/groups/$($assignment)"
+                            }
+
+                            $diskencryptionList += New-Object PSObject -Property @{
+                                'name' = $item.displayName
+                                'policytype' = $templateIDList."$($item.templateId)"
+                                'platforms' = $platformsList."$($item.templateId)"
+                                'templateid' = $item.templateId
+                                'lastModifiedDateTime' = $item.lastModifiedDateTime
+                                'Assignments' = $groupInfo.displayName -join ', '
+                                'graphtype' = 'intent'
+                                'id' = $item.id
+		                    }
+                        }
+                        #endregion
+
+                        #region Generating Data
+		                $TableParams = @{
+                            Name = $SectionName
+                            List = $false
+                            Header = 'Platforms', 'Name', 'Policy Type', 'Last Modified', 'Assignments'
+				            Columns = 'platforms', 'name', 'policytype', 'lastModifiedDateTime', 'Assignments'
+                        }
+		                $TableParams['Caption'] = "- $($TableParams.Name)"
+                        if ($diskencryptionList.count -gt 0) {
+		                    $diskencryptionList | select platforms, name, policytype, lastModifiedDateTime, Assignments | Table @TableParams
+                        } else {
+                            Paragraph "No $($sectionName) found"
+                        }
+                        #endregion
+
+                        #region Disk Encryption Policies Definition
+                        foreach($item in $diskencryptionList) {
+                            $SectionName = "Policy: $($item.Name)"
+                            Write-RFLLog -Message "        Starting SubSection '$($sectionName)'"
+                            Section -Style Heading4 $SectionName {
+                                #region Collect Data
+                                $outobj = @()
+                                if ($item.graphtype -eq 'intent') {
+                                    $template = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/templates/$($item.templateid)"
+                                    $categories = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/templates/$($item.templateid)/categories"                                    
+                                    foreach($catitem in $categories.value) {
+                                        $setDef = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/templates/$($item.templateid)/categories/$($catitem.id)/settingDefinitions?"
+                                        $poldef = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/intents/$($item.id)/categories/$($catitem.id)/settings?`$expand=Microsoft.Graph.DeviceManagementComplexSettingInstance/Value"
+
+                                        foreach($politem in $poldef.value) {
+                                            if ($politem.value -isnot [Array]) {
+                                                $setDefItem = $setdef.value | Where-Object {$_.id -eq $politem.definitionId}
+                                                $outobj += New-Object PSObject -Property @{
+                                                    'SettingLevel' = $catitem.displayName
+			                                        'isTopLevel' = $setDefItem.isTopLevel
+			                                        'displayName' = $setDefItem.displayName
+			                                        'documentationUrl' = $setDefItem.documentationUrl
+			                                        'Value' = $polItem.Value
+		                                        }
+                                            } else {
+                                                foreach($polSubitem in $politem.value) {
+                                                    if ($polSubitem.value -isnot [Array]) {
+                                                        $setDefItem = $setdef.value | Where-Object {$_.id -eq $polSubitem.definitionId}
+                                                        $outobj += New-Object PSObject -Property @{
+                                                            'SettingLevel' = $catitem.displayName
+			                                                'isTopLevel' = $setDefItem.isTopLevel
+			                                                'displayName' = $setDefItem.displayName
+			                                                'documentationUrl' = $setDefItem.documentationUrl
+			                                                'Value' = $polSubitem.Value
+		                                                }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                #endregion
+
+
+                                #region Generating Data
+		                        $TableParams = @{
+                                    Name = $SectionName
+                                    List = $false
+                                    ColumnWidths = 30, 50, 20
+                                    Header = 'SettingLevel', 'displayName', 'Value'
+				                    Columns = 'SettingLevel', 'displayName', 'Value'
+                                }
+		                        $TableParams['Caption'] = "- $($TableParams.Name)"
+                                if ($outobj.count -gt 0) {
+		                            $outobj | Table @TableParams
+                                } else {
+                                    Paragraph "No $($sectionName) found"
+                                }
+                                #endregion
+                            }
+                        }
+                        #endregion
+                    }
+                    #endregion
+
+                    #region Firewall
+                    $SectionName = "Firewall"
+                    Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                    Section -Style Heading3 $SectionName {
+                        #region Collect Data
+                        $firewallPolicyList = @()
+
+                        Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/configurationPolicies?`$select=id,name,description,platforms,lastModifiedDateTime,technologies,settingCount,roleScopeTagIds,isAssigned,templateReference&`$filter=templateReference/TemplateFamily%20eq%20%27endpointSecurityFirewall%27"
+                        ##Todo: use v1.0 version when available
+                        $firewallPolicyListtFirewall = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies?`$select=id,name,description,platforms,lastModifiedDateTime,technologies,settingCount,roleScopeTagIds,isAssigned,templateReference&`$filter=templateReference/TemplateFamily%20eq%20%27endpointSecurityFirewall%27"
+                        foreach($item in $firewallPolicyListtFirewall.value) {
+                            ##Todo: use v1.0 version when available
+                            $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies/$($item.id)/assignments"
+                            $groupInfo = @()
+                            foreach($assignment in $assignments.Value.target.groupID) {
+                                ##Todo: use v1.0 version when available
+                                $groupInfo += Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/groups/$($assignment)"
+                            }
+
+                            $firewallPolicyList += New-Object PSObject -Property @{
+                                'name' = $item.name
+                                'id' = $item.id
+                                'technologies' = $item.technologies
+                                'templateReference' = $item.templateReference
+                                'lastModifiedDateTime' = $item.lastModifiedDateTime
+                                'platforms' = $platformsList."$($item.platforms)"
+                                'templatetype' = $item.templateReference.templateDisplayName
+                                'templateid' = $item.templateReference.templateId
+                                'Assignments' = $groupInfo.displayName -join ', '
+                                'graphtype' = 'firewall'
+		                    }
+                        }
+
+
+                        Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/configurationPolicies?select=id,name,description,technologies,platforms,lastModifiedDateTime,settingCount,roleScopeTagIds,creationSource,isAssigned,templateReference&`$filter=(technologies eq 'configManager' and creationSource eq 'Firewall')"
+                        ##Todo: use v1.0 version when available
+                        $firewallPolicyListConfigMgr = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies?select=id,name,description,technologies,platforms,lastModifiedDateTime,settingCount,roleScopeTagIds,creationSource,isAssigned,templateReference&`$filter=(technologies eq 'configManager' and creationSource eq 'Firewall')"
+                        foreach($item in $firewallPolicyListConfigMgr.value) {
+                            ##Todo: use v1.0 version when available
+                            $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies/$($item.id)/assignments"
+                            $groupInfo = @()
+                            foreach($assignment in $assignments.Value.target.groupID) {
+                                ##Todo: use v1.0 version when available
+                                $groupInfo += Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/groups/$($assignment)"
+                            }
+
+                            $firewallPolicyList += New-Object PSObject -Property @{
+                                'name' = $item.name
+                                'id' = $item.id
+                                'technologies' = $item.technologies
+                                'templateReference' = $item.templateReference
+                                'lastModifiedDateTime' = $item.lastModifiedDateTime
+                                'platforms' = $platformsList."$($item.platforms)"
+                                'templatetype' = 'Microsoft Defender Firewall' #$item.templateReference.templateDisplayName is always null
+                                'templateid' = $item.templateReference.templateId
+                                'Assignments' = $groupInfo.displayName -join ', '
+                                'graphtype' = 'configmgr'
+		                    }
+                        }
+
+                        Write-RFLLog -Message "        MSGraph (Beta): /deviceManagement/intents?`$filter=templateId eq 'c53e5a9f-2eec-4175-98a1-2b3d38084b91' or templateId eq '4356d05c-a4ab-4a07-9ece-739f7c792910' or templateId eq '5340aa10-47a8-4e67-893f-690984e4d5da'"
+                        ##Todo: use v1.0 version when available
+                        $firewallPolicyListIntents = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/intents?`$filter=templateId eq 'c53e5a9f-2eec-4175-98a1-2b3d38084b91' or templateId eq '4356d05c-a4ab-4a07-9ece-739f7c792910' or templateId eq '5340aa10-47a8-4e67-893f-690984e4d5da'"
+                        foreach($item in $firewallPolicyListIntents.value) {
+                            ##Todo: use v1.0 version when available
+                            $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/intents/$($item.id)/assignments"
+                            $groupInfo = @()
+                            foreach($assignment in $assignments.Value.target.groupID) {
+                                ##Todo: use v1.0 version when available
+                                $groupInfo += Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/groups/$($assignment)"
+                            }
+
+                            $firewallPolicyList += New-Object PSObject -Property @{
+                                'name' = $item.displayName
+                                'id' = $item.id
+                                'technologies' = 'mdm'
+                                'templateReference' = $null
+                                'lastModifiedDateTime' = $item.lastModifiedDateTime
+                                'platforms' = $platformsList."$($item.templateId)"
+                                'templatetype' = 'macOS firewall'
+                                'templateid' = $item.templateId
+                                'Assignments' = $groupInfo.displayName -join ', '
+                                'graphtype' = 'mac'
+		                    }
+                        }
+                        #endregion
+
+                        #region Generating Data
+		                $TableParams = @{
+                            Name = $SectionName
+                            List = $false
+                            Header = 'Platform', 'Name', 'Policy Type', 'Target', 'Last Modified', 'Assignments'
+				            Columns = 'platforms', 'name', 'templatetype', 'technologies', 'lastModifiedDateTime', 'Assignments'
+                        }
+		                $TableParams['Caption'] = "- $($TableParams.Name)"
+                        if ($firewallPolicyList.count -gt 0) {
+		                    $firewallPolicyList | select platforms, name, templatetype, technologies, lastModifiedDateTime, Assignments | Table @TableParams
+                        } else {
+                            Paragraph "No $($sectionName) found"
+                        }
+                        #endregion
+
+                        #region Firewall Policies Definition
+                        foreach($item in $firewallPolicyList) {
+                            $SectionName = "Policy: $($item.Name)"
+                            Write-RFLLog -Message "        Starting SubSection '$($sectionName)'"
+                            Section -Style Heading4 $SectionName {
+                                #region Collect Data
+                                $outobj = @()
+                                if ($item.graphtype -eq 'mac') {
+                                    $template = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/templates/$($item.templateid)"
+                                    $categories = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/templates/$($item.templateid)/categories"
+                                    foreach($catitem in $categories.value) {
+                                        $setDef = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/templates/$($item.templateid)/categories/$($catitem.id)/settingDefinitions?"
+                                        $poldef = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/intents/$($item.id)/categories/$($catitem.id)/settings?`$expand=Microsoft.Graph.DeviceManagementComplexSettingInstance/Value"
+
+                                        foreach($politem in $poldef.value) {
+                                            if ($politem.value -isnot [Array]) {
+                                                $setDefItem = $setdef.value | Where-Object {$_.id -eq $politem.definitionId}
+                                                $outobj += New-Object PSObject -Property @{
+                                                    'SettingLevel' = $catitem.displayName
+			                                        'isTopLevel' = $setDefItem.isTopLevel
+			                                        'displayName' = $setDefItem.displayName
+			                                        'documentationUrl' = $setDefItem.documentationUrl
+			                                        'Value' = $polItem.Value
+		                                        }
+                                            } else {
+                                                foreach($polSubitem in $politem.value) {
+                                                    if ($polSubitem.value -isnot [Array]) {
+                                                        $setDefItem = $setdef.value | Where-Object {$_.id -eq $polSubitem.definitionId}
+                                                        $outobj += New-Object PSObject -Property @{
+                                                            'SettingLevel' = $catitem.displayName
+			                                                'isTopLevel' = $setDefItem.isTopLevel
+			                                                'displayName' = $setDefItem.displayName
+			                                                'documentationUrl' = $setDefItem.documentationUrl
+			                                                'Value' = $polSubitem.Value
+		                                                }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } elseif ($item.graphtype -eq 'configmgr') {
+                                    ##Todo
+                                } elseif ($item.graphtype -eq 'firewall') {
+                                    Write-RFLLog -Message "            MSGraph (Beta): deviceManagement/configurationPolicies/{id}/settings?`$expand=settingDefinitions&top=1000"
+                                    ##Todo: use v1.0 version when available
+                                    $polDef = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicies/$($item.id)/settings?`$expand=settingDefinitions&top=1000"
+                                    ##Todo: use v1.0 version when available
+                                    $setDef = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/configurationPolicyTemplates/$($item.templateReference.templateId)/settingTemplates?`$expand=settingDefinitions&top=1000"
+                    
+                                    foreach($polItem in $polDef.Value) {
+                                        if ($null -eq $politem.settingInstance.groupSettingCollectionValue.children) {
+                                            $setDefItem = $setdef.value.settingdefinitions | Where-Object {$_.id -eq $politem.settingInstance.settingDefinitionId}
+                                            $policeDef = New-Object PSObject -Property @{
+			                                    'displayName' = $setDefItem.displayName
+			                                    'SettingLevel' = '{0}{1}' -f $setDefItem.baseUri, $setDefItem.offsetUri
+			                                    'Value' = 
+                                                    if (($null -eq ($polItem.settingInstance.choiceSettingValue)) -and ($null -eq $polItem.settingInstance.simpleSettingCollectionValue)) { 
+                                                        $polItem.settingInstance.simpleSettingValue.value 
+                                                    } elseif ($null -eq $polItem.settingInstance.simpleSettingCollectionValue) { 
+                                                        $polItem.settingInstance.choiceSettingValue.value.replace("$($polItem.settingInstance.settingDefinitionId)_",'') 
+                                                    } else {
+                                                        $polItem.settingInstance.simpleSettingCollectionValue.value -join ', '
+                                                    }
+                                
+		                                    }
+                                            $outobj += $policeDef
+                                        } else {
+                                            foreach($polChild in $politem.settingInstance.groupSettingCollectionValue.children) {
+                                                $setDefItem = $setdef.value.settingdefinitions | Where-Object {$_.id -eq $polChild.settingDefinitionId}
+                                                $policeDef = New-Object PSObject -Property @{
+			                                        'displayName' = $setDefItem.displayName
+			                                        'SettingLevel' = '{0}{1}' -f $setDefItem.baseUri, $setDefItem.offsetUri
+			                                        'Value' = 
+                                                        if (($null -eq ($polItem.settingInstance.choiceSettingValue)) -and ($null -eq $polItem.settingInstance.simpleSettingCollectionValue)) { 
+                                                            $polItem.settingInstance.simpleSettingValue.value 
+                                                        } elseif ($null -eq $polItem.settingInstance.simpleSettingCollectionValue) { 
+                                                            $polItem.settingInstance.choiceSettingValue.value.replace("$($polItem.settingInstance.settingDefinitionId)_",'') 
+                                                        } else {
+                                                            $polItem.settingInstance.simpleSettingCollectionValue.value -join ', '
+                                                        }
+                                    
+		                                        }
+                                                $outobj += $policeDef
+                                            }
+                                        }
+                                    }
+                                }
+                                #endregion
+
+
+                                #region Generating Data
+		                        $TableParams = @{
+                                    Name = $SectionName
+                                    List = $false
+                                    ColumnWidths = 30, 50, 20
+                                    Header = 'Name', 'Setting', 'Value'
+				                    Columns = 'displayName', 'SettingLevel', 'Value'
+                                }
+		                        $TableParams['Caption'] = "- $($TableParams.Name)"
+                                if ($outobj.count -gt 0) {
 		                            $outobj | Table @TableParams
                                 } else {
                                     Paragraph "No $($sectionName) found"
@@ -2229,7 +2631,6 @@ try {
 
                 #region todo:
                 <#
-                disk encryption
                 firewall
                 endpoint privilege management
                 endpoint detection and response
@@ -2246,7 +2647,7 @@ try {
 
         #region Policies
         $sectionName = 'Policies'
-        if ($SectionEndpointSecurity -eq $false) {
+        if ($SectionPolicies -eq $false) {
 	        Write-RFLLog -Message "Exporting Section '$($sectionName)' is being ignored as the parameter to export is set to false" -LogLevel 2
         } else {
             PageBreak
