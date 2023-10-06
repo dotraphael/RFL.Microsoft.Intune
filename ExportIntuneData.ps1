@@ -57,8 +57,8 @@
         Name: ExportIntuneData.ps1
         Author: Raphael Perez
         DateCreated: 17 May 2023 (v0.1)
-        LatestUpdate: 16 June 2023 (v0.3)
-        Website: http://www.endpointmanagers.com
+        LatestUpdate: 06 October 2023 (v0.4)
+        Website: http://www.rflsystems.co.uk
         WebSite: https://github.com/dotraphael/RFL.Microsoft.Intune
         Twitter: @dotraphael
         Update: 24 May 2023 (v0.2)
@@ -74,6 +74,20 @@
             - Added Ebooks category Section
             - Added Disk Encryption section
             - Added Firewall section (#Todo: ConfigMgr firewall policies)
+        Update: 06 October 2023 (v0.4)
+            - updated last signin to query Beta Graph API
+            - updated registered Devices to query Beta Graph API
+            - updated Authentication Method to query Beta Graph API
+            - updated Application Install Summary to report as installSummary is old API - https://techcommunity.microsoft.com/t5/intune-customer-success/support-tip-retrieving-intune-apps-reporting-data-from-microsoft/ba-p/3851578
+            - Added intuneOptions Enumeration
+            - Added TrueFalseToYesNo Enumeration
+            - Added TrueFalseToRequiredPreferred Enumeration
+            - added Windows Enrollment (Windows Hello for Business, Enrollment Status Page)
+            - added function IIf so i to simulate ternary operator syntax (Powershell 7) in PowerShell 5.1
+            - added exporting error information at the end of the script
+            - added filter to not log secret information
+            - updated Device diagnostics to query Beta Graph API
+            - updated onprem sync enabled to show False instead of empty when it is false
 
         Create Azure AD Application
         1. create a Azure AD Application - https://learn.microsoft.com/en-us/graph/toolkit/get-started/add-aad-app-registration
@@ -93,7 +107,7 @@
         			- RoleManagement.Read.CloudPC
         			- Organization.Read.All
         			- UserAuthenticationMethod.Read.All
-                   - AuditLog.Read.All
+                    - AuditLog.Read.All
         5. Click add a permission and select Intune, click Application permissions and add the following permissions
         			- get_data_warehouse
         			- get_device_compliance
@@ -102,7 +116,6 @@
 
 
     .LINK
-        http://www.endpointmanagers.com
         http://www.rflsystems.co.uk
         https://github.com/dotraphael/RFL.Microsoft.Intune
 
@@ -331,6 +344,41 @@ function Get-ScriptDirectory {
 }
 #endregion
 
+#region Get-IIf
+function Get-Iif {
+<#
+    .SYSNOPSIS
+        Inline If for version 5.0
+
+    .DESCRIPTION
+        Inline If for version 5.0
+
+    .NOTES
+        Name: Get-Iif
+        Author: Raphael Perez
+        DateCreated: 16 July 2023 (v0.1)
+
+    .EXAMPLE
+        $VolatileEnvironment = Get-Item -ErrorAction SilentlyContinue "HKCU:\Volatile Environment" 
+        $UserName = IIf $VolatileEnvironment {$_.GetValue("UserName")}
+#>
+param(
+    [object]$If,
+    [object]$Then,
+    [object]$Else
+)
+    #if ($PSVersionTable.item('PSVersion').Tostring() -match '7.') {
+    #    #Using the ternary operator syntax for PowerShell 7+ - https://learn.microsoft.com/en-gb/powershell/module/microsoft.powershell.core/about/about_if?view=powershell-7.3&viewFallbackFrom=powershell-7#using-the-ternary-operator-syntax
+    #    $If ? $Then : $Else
+    #} else {
+        If ($If -IsNot "Boolean") {$_ = $If}
+        If ($If) {If ($Then -is "ScriptBlock") {&$Then} Else {$Then}}
+        Else {If ($Else -is "ScriptBlock") {&$Else} Else {$Else}}
+        #if ($if) { $then } else { $else }
+    #}
+}
+#endregion
+
 #endregion
 
 #region ENUM List
@@ -397,16 +445,39 @@ $templateIDList = @{
     'a239407c-698d-4ef8-b314-e3ae409204b8' = 'FileVault';
 }
 
+$intuneOptions = @{
+    'notConfigured' = 'Not Configured';
+    'enabled' = 'Enabled';
+    'disabled' = 'Disabled';
+    'notallowed' = 'Not Allowed'
+    'allowed' = 'Allowed'
+    'required' = 'Required'
+}
+
+$TrueFalseToYesNo = @{
+    'True' = 'Yes';
+    'False' = 'No';
+}
+
+$TrueFalseToRequiredPreferred = @{
+    'True' = 'Required';
+    'False' = 'Preferred';
+}
+
+
 #endregion
 
 #region Variables
-$script:ScriptVersion = '0.3'
+$script:ScriptVersion = '0.4'
 $script:LogFilePath = $env:Temp
 $Script:LogFileFileName = 'ExportIntuneData.log'
 $script:ScriptLogFilePath = "$($script:LogFilePath)\$($Script:LogFileFileName)"
 $Script:Modules = @('MSAL.PS', 'PScribo')
 $Script:CurrentFolder = (Get-Location).Path
 $Global:ExecutionTime = Get-Date
+$Global:MaxAppRequest = 10
+$Global:WaitSeconds = 20
+$Global:NotLogParameters = @('ClientId', 'ClientSecret', 'CertificateThumbprint', 'CertificateName', 'Account', 'Certificate')
 
 if($BetaAPI -eq $true){
 	$version = "beta"
@@ -441,8 +512,12 @@ try {
     Write-RFLLog -Message "Report Name: $($Global:ReportFile)"
     Write-RFLLog -Message "Export Path: $($OutputFolderPath)"
 
-    $PSCmdlet.MyInvocation.BoundParameters.Keys | ForEach-Object { 
-        Write-RFLLog -Message "Parameter '$($_)' is '$($PSCmdlet.MyInvocation.BoundParameters.Item($_))'"
+    $PSCmdlet.MyInvocation.BoundParameters.Keys | ForEach-Object {
+        if ($_ -in $Global:NotLogParameters) {            
+            Write-RFLLog -Message "Parameter '$($_)' is '$((Get-Iif -if ([string]::IsNullOrEmpty($PSCmdlet.MyInvocation.BoundParameters.Item($_))) -Then '' -Else '****************'))'"
+        } else {
+            Write-RFLLog -Message "Parameter '$($_)' is '$($PSCmdlet.MyInvocation.BoundParameters.Item($_))'"
+        }        
     }
 
     $PSVersionTable.Keys | ForEach-Object { 
@@ -493,7 +568,13 @@ try {
 
     Write-RFLLog -Message "MS Graph Context Connection Info"
 
-    $mgContext.psobject.properties | foreach-object {Write-RFLLog -Message ('    {0} = {1}' -f $_.Name, ($_.Value -join ', '))}
+    $mgContext.psobject.properties | foreach-object {
+        if ($_.Name -in $Global:NotLogParameters) {
+            Write-RFLLog -Message ('    {0} = {1}' -f $_.Name, (Get-Iif -if ([string]::IsNullOrEmpty($_.Value)) -Then '' -Else '****************'))
+        } else {
+            Write-RFLLog -Message ('    {0} = {1}' -f $_.Name, ($_.Value -join ', '))
+        }
+    }
     #endregion
 
     #region main script
@@ -739,8 +820,9 @@ try {
                 Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
                 Section -Style Heading2 $SectionName {
                     #region Collect Data
-		            Write-RFLLog -Message "        MSGraph: deviceManagement/settings"
-                    $outObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/deviceManagement/settings"
+		            Write-RFLLog -Message "        MSGraph (Beta): deviceManagement/settings"
+                    ##Todo: use v1.0 version when available
+                    $outObj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/settings"
                     #endregion
 
                     #region Generating Data
@@ -930,9 +1012,167 @@ try {
                 }
                 #endregion
 
+                #region Windows Categories
+                $SectionName = "Windows Enrollment"
+                Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                Section -Style Heading2 $SectionName {
+                    #region Collect Data
+                    #endregion
+
+                    #region Windows Hello for Business
+                    $SectionName = "Windows Hello for Business"
+                    Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                    Section -Style Heading3 $SectionName {
+                        #region Collect Data
+                        Write-RFLLog -Message "        MSGraph: deviceManagement/deviceEnrollmentConfigurations?`$expand=assignments&`$filter=deviceEnrollmentConfigurationType%20eq%20%27WindowsHelloForBusiness%27"
+                        $outobj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/deviceEnrollmentConfigurations?`$expand=assignments&`$filter=deviceEnrollmentConfigurationType%20eq%20%27WindowsHelloForBusiness%27"
+                        #endregion
+
+                        #region Generating Data
+		                $TableParams = @{
+                            Name = $SectionName
+                            List = $true
+                            ColumnWidths = 60, 40
+                        }
+		                $TableParams['Caption'] = "- $($TableParams.Name)"
+                        if ($outobj.Value.count -gt 0) {
+		                    $outobj.Value | select @{Name="Name";Expression = { $_.displayName }}, 
+                                            @{Name="Description";Expression = { $_.description }},
+                                            @{Name="Configure Windows Hello for Business";Expression = { $intuneOptions."$($_.state)" }}, 
+                                            @{Name="Use a Trusted Platform Module (TPM)";Expression = { $TrueFalseToRequiredPreferred."$($_.securityDeviceRequired.ToString())" }}, 
+                                            @{Name="Minimum PIN lenght";Expression = { $_.pinMinimumLength }}, 
+                                            @{Name="Maximum PIN lenght";Expression = { $_.pinMaximumLength }}, 
+                                            @{Name="Lowercase letters in PIN";Expression = { $intuneOptions."$($_.pinLowercaseCharactersUsage)" }}, 
+                                            @{Name="Uppercase letters in PIN";Expression = { $intuneOptions."$($_.pinUppercaseCharactersUsage)" }}, 
+                                            @{Name="Special characters in PIN";Expression = { $intuneOptions."$($_.pinSpecialCharactersUsage)" }}, 
+                                            @{Name="PIN expiration (days)";Expression = { $_.pinExpirationInDays }}, 
+                                            @{Name="Remember PIN history";Expression = { $_.pinPreviousBlockCount }}, 
+                                            @{Name="Allow biometric authentication";Expression = { $TrueFalseToYesNo."$($_.unlockWithBiometricsEnabled.ToString())" }}, 
+                                            @{Name="Use enhanced anti-spoofing, when available";Expression = { $intuneOptions."$($_.enhancedBiometricsState)" }}, 
+                                            @{Name="Allow phone sign-in";Expression = { $TrueFalseToYesNo."$($_.remotePassportEnabled)" }}, 
+                                            @{Name="Use security keys for sign-in";Expression = { $intuneOptions."$($_.securityKeyForSignIn)" }} | Table @TableParams
+                        } else {
+                            Paragraph "No $($sectionName) found"
+                        }
+                        #endregion
+                    }
+                    #endregion
+
+                    #region Enrollment Status Page
+                    $SectionName = "Enrollment Status Page"
+                    Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
+                    Section -Style Heading3 $SectionName {
+                        #region Collect Data
+                        Write-RFLLog -Message "        MSGraph: deviceManagement/deviceEnrollmentConfigurations"
+                        $outobj = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/deviceEnrollmentConfigurations"
+                        $esp = @()
+
+                        foreach($item in ($outobj.value | Where-Object {$_.deviceEnrollmentConfigurationType -eq 'windows10EnrollmentCompletionPageConfiguration'})) {
+                            ##Todo: use v1.0 version when available
+                            $assignments = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceManagement/deviceEnrollmentConfigurations/$($item.id)/assignments"
+                            $groupInfo = @()
+                            foreach($assignment in $assignments.Value.target.groupID) {
+                                ##Todo: use v1.0 version when available
+                                $groupInfo += Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/groups/$($assignment)"
+                            }
+
+                            $esp += New-Object PSObject -Property @{
+                                'name' = $item.displayName
+                                'id' = $item.id
+                                'Priority' = $item.priority
+                                'Assignments' = $groupInfo.displayName -join ', '
+                                'installQualityUpdates' = $item.installQualityUpdates
+                                'allowNonBlockingAppInstallation' = $item.allowNonBlockingAppInstallation
+                                'deviceEnrollmentConfigurationType' = $item.deviceEnrollmentConfigurationType
+                                'trackInstallProgressForAutopilotOnly' = $item.trackInstallProgressForAutopilotOnly
+                                'allowDeviceUseOnInstallFailure' = $item.allowDeviceUseOnInstallFailure
+                                'description' = $item.description
+                                'selectedMobileAppIds' = $item.selectedMobileAppIds
+                                'showInstallationProgress' = $item.showInstallationProgress
+                                'allowDeviceResetOnInstallFailure' = $item.allowDeviceResetOnInstallFailure
+                                'version' = $item.version
+                                'installProgressTimeoutInMinutes' = $item.installProgressTimeoutInMinutes
+                                'createdDateTime' = $item.createdDateTime
+                                'disableUserStatusTrackingAfterFirstUser' = $item.disableUserStatusTrackingAfterFirstUser
+                                'roleScopeTagIds' = $item.roleScopeTagIds
+                                'customErrorMessage' = $item.customErrorMessage
+                                'allowLogCollectionOnInstallFailure' = $item.allowLogCollectionOnInstallFailure
+                                'blockDeviceSetupRetryByUser' = $item.blockDeviceSetupRetryByUser
+                                'lastModifiedDateTime' = $item.lastModifiedDateTime
+		                    }
+                        }
+                        #endregion
+
+                        #region Generating Data
+		                $TableParams = @{
+                            Name = $SectionName
+                            List = $false
+                            ColumnWidths = 30, 50, 20
+                            Header = 'Name', 'Priority', 'Assignments'
+				            Columns = 'name', 'Priority', 'Assignments'
+                        }
+		                $TableParams['Caption'] = "- $($TableParams.Name)"
+                        if ($esp.count -gt 0) {
+		                    $esp | Table @TableParams
+                        } else {
+                            Paragraph "No $($sectionName) found"
+                        }
+                        #endregion
+
+                        #region ESP Policy Properties
+                        foreach($item in $esp) {
+                            $SectionName = "Enrollment Status Page - $($item.Name)"
+                            Write-RFLLog -Message "        Starting SubSection '$($sectionName)'"
+                            Section -Style Heading4 $SectionName {
+                                #region Collect Data
+                                Write-RFLLog -Message "            MSGraph: deviceAppManagement/mobileApps/(appId)"
+                                $appsInfo = @()
+                                foreach($appId in $item.selectedMobileAppIds) {
+                                    ##Todo: use v1.0 version when available
+                                    $appsInfo += Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceAppManagement/mobileApps/$($appId)"
+                                }                                
+                                #endregion
+
+                                #region Generating Data
+		                        $TableParams = @{
+                                    Name = $SectionName
+                                    List = $true
+                                    ColumnWidths = 60, 40
+                                }
+		                        $TableParams['Caption'] = "- $($TableParams.Name)"
+		                        $item | select @{Name="Name";Expression = { $_.name }}, 
+                                               @{Name="Description";Expression = { $_.description }},
+                                               @{Name="Show app and profile configuration progress";Expression = { $_.showInstallationProgress }}, 
+                                               @{Name="Show an error when installation takes longer than specified number of minutes";Expression = { $_.installProgressTimeoutInMinutes }},
+                                               @{Name="Show custom message when time limit or error occurs";Expression = { -not [System.String]::IsNullOrEmpty($_.customErrorMessage) }},
+                                               @{Name="Error message";Expression = { $_.customErrorMessage }},
+                                               @{Name="Turn on log collection and diagnostics page for end users";Expression = { $_.allowLogCollectionOnInstallFailure }},
+                                               @{Name="Only show page to devices provisioned by out-of-box experience (OOBE)";Expression = { $_.trackInstallProgressForAutopilotOnly }},
+                                               @{Name="Block device use until all apps and profiles are installed";Expression = { $_.blockDeviceSetupRetryByUser }},
+                                               @{Name="Allow users to reset device if installation error occurs";Expression = { $_.allowDeviceResetOnInstallFailure }},
+                                               @{Name="Allow users to use device if installation error occurs";Expression = { $_.allowDeviceUseOnInstallFailure }},
+                                               @{Name="Block device use until required apps are installed if they are assigned to the user/device";Expression = { if ($item.selectedMobileAppIds.Count -eq 0) { 'All' } else { $appsInfo.displayName -join ', ' }  }},
+                                               @{Name="Only fail selected blocking apps in technician phase (preview)";Expression = { $_.allowNonBlockingAppInstallation }} | Table @TableParams
+                                #endregion
+                            }
+                        }
+                        #endregion
+                    }
+                    #endregion
+
+
+                }
+                #endregion
+
                 #region todo:
                 <#
-                windows enrollment
+                windows enrollment - automatic enrollment
+                windows enrollment - enrollment notifications
+                windows enrollment - co-management settings
+                windows enrollment - deployment profiles
+                windows enrollment - devices
+                windows enrollment - intune connector for AD
+
                 apple enrollment
                 android enrollment
                 enrollment device platform restrictions
@@ -1389,7 +1629,7 @@ try {
                         id = $item.id
                         userType = $item.userType
                         accountEnabled = $item.accountEnabled
-                        onPremisesSyncEnabled = $item.onPremisesSyncEnabled
+                        onPremisesSyncEnabled = (-not [string]::IsNullOrEmpty($item.onPremisesSyncEnabled))
                         passwordPolicies = $item.passwordPolicies
                         usageLocation = $item.usageLocation
                     }
@@ -1412,7 +1652,7 @@ try {
 				        Columns = 'Name', 'Count'
                     }
 		            $TableParams['Caption'] = "- $($TableParams.Name)"
-                    if ($userList.value.count -gt 0) {
+                    if ($userListFixed.count -gt 0) {
                         #$userList.value | Group-Object userType does not work as expected. it returns name = "" so fixing with foreach
 		                #$userList.value | Group-Object userType | Table @TableParams
                         $userListFixed | Group-Object userType | Table @TableParams
@@ -1439,7 +1679,7 @@ try {
 				        Columns = 'Name', 'Count'
                     }
 		            $TableParams['Caption'] = "- $($TableParams.Name)"
-                    if ($userList.value.count -gt 0) {
+                    if ($userListFixed.count -gt 0) {
                         #$userList.value | Group-Object accountEnabled does not work as expected. it returns name = "" so fixing with foreach
 		                #$userList.value | Group-Object accountEnabled | Table @TableParams
                         $userListFixed | Group-Object accountEnabled | Table @TableParams
@@ -1466,9 +1706,7 @@ try {
 				        Columns = 'Name', 'Count'
                     }
 		            $TableParams['Caption'] = "- $($TableParams.Name)"
-                    if ($userList.value.count -gt 0) {
-                        #$userList.value | Group-Object onPremisesSyncEnabled does not work as expected. it returns name = "" so fixing with foreach
-		                #$userList.value | Group-Object onPremisesSyncEnabled | Table @TableParams
+                    if ($userListFixed.count -gt 0) {
                         $userListFixed | Group-Object onPremisesSyncEnabled | Table @TableParams
                     } else {
                         Paragraph "No $($sectionName) found"
@@ -1493,7 +1731,7 @@ try {
 				        Columns = 'Name', 'Count'
                     }
 		            $TableParams['Caption'] = "- $($TableParams.Name)"
-                    if ($userList.value.count -gt 0) {
+                    if ($userListFixed.count -gt 0) {
                         #$userList.value | Group-Object passwordPolicies does not work as expected. it returns name = "" so fixing with foreach
 		                #$userList.value | Group-Object passwordPolicies | Table @TableParams
                         $userListFixed | Group-Object passwordPolicies | Table @TableParams
@@ -1520,7 +1758,7 @@ try {
 				        Columns = 'Name', 'Count'
                     }
 		            $TableParams['Caption'] = "- $($TableParams.Name)"
-                    if ($userList.value.count -gt 0) {
+                    if ($userListFixed.count -gt 0) {
                         #$userList.value | Group-Object usageLocation does not work as expected. it returns name = "" so fixing with foreach
 		                #$userList.value | Group-Object usageLocation | Table @TableParams
                         $userListFixed | Group-Object usageLocation | Table @TableParams
@@ -1567,10 +1805,11 @@ try {
                 Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
                 Section -Style Heading2 $SectionName {
                     #region Collect Data
-                    Write-RFLLog -Message "        MSGraph: users/{id}/registeredDevices"
+                    ##Todo: use v1.0 version when available
+                    Write-RFLLog -Message "        MSGraph (Beta): users/{id}/registeredDevices"
                     $regDevices = @()
                     foreach($item in $userList.value) {
-                        $userDevices = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/users/{$($item.id)}/registeredDevices"
+                        $userDevices = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/users/{$($item.id)}/registeredDevices"
                         $regDevices += New-Object PSObject -Property @{ 
                             'user' = $item.userPrincipalName
                             'count' = $userDevices.value.count
@@ -1601,10 +1840,11 @@ try {
                 Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
                 Section -Style Heading2 $SectionName {
                     #region Collect Data
-                    Write-RFLLog -Message "        MSGraph: users/{UPN}/authentication/methods"
+                    ##Todo: use v1.0 version when available
+                    Write-RFLLog -Message "        MSGraph (Beta): users/{UPN}/authentication/methods"
                     $authUsers = @()
                     foreach($item in $userList.value) {
-                        $authMethods = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/users/$($item.userPrincipalName)/authentication/methods"
+                        $authMethods = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/users/$($item.id)/authentication/methods"
                         foreach($authItem in $authMethods.value) {
                             $authUsers += New-Object PSObject -Property @{ 
                                 'user' = $item.userPrincipalName
@@ -1669,8 +1909,9 @@ try {
                 Write-RFLLog -Message "    Starting SubSection '$($sectionName)'"
                 Section -Style Heading2 $SectionName {
                     #region Collect Data
-                    Write-RFLLog -Message "        MSGraph: users?`$select=displayName,signInActivity"
-                    $userLastLogin = Invoke-MgGraphRequest -Method GET -Uri "$($Global:baseUri)/users?`$select=displayName,signInActivity"
+                    Write-RFLLog -Message "        MSGraph (Beta): users?`$select=displayName,signInActivity"
+                    ##Todo: use v1.0 version when available
+                    $userLastLogin = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/users?`$select=displayName,signInActivity"
                     $outobj = @()
                     foreach($item in $userLastLogin.value) {
                         $Obj = New-Object PSObject -Property @{
@@ -1723,7 +1964,6 @@ try {
                 user settings
                 #>
                 #endregion
-
             }
         }
         #endregion
@@ -1906,25 +2146,56 @@ try {
                 ##Todo: use v1.0 version when isAssigned is available 
                 Write-RFLLog -Message "    MSGraph (Beta): deviceAppManagement/mobileApps"
                 $AppList = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceAppManagement/mobileApps"
-
                 Write-RFLLog -Message "    MSGraph (Beta): deviceAppManagement/mobileApps/{id}/installSummary"
+<#
+##Todo: Use json schema? - https://github.com/SchemaModule/PowerShell, https://github.com/corvus-dotnet/corvus.jsonschema
+schema 
+Column                    PropertyType
+------                    ------------
+0-ApplicationId             String
+1-FailedDeviceCount         Int64
+2-PendingInstallDeviceCount Int64
+3-InstalledDeviceCount      Int64
+4-NotInstalledDeviceCount   Int64
+5-NotApplicableDeviceCount  Int64
+6-FailedUserCount           Int64
+7-PendingInstallUserCount   Int64
+8-InstalledUserCount        Int64
+9-NotInstalledUserCount     Int64
+10-NotApplicableUserCount    Int64
+#>
+
                 $AppInstallList = @()
+                $i = 0
                 foreach($item in $AppList.Value) {
+                    $i++
+                    if ($i -gt $Global:MaxAppRequest) {
+                        $i = 1
+                        start-sleep $Global:WaitSeconds
+                    }
                     ##Todo: use v1.0 version when available
-                    $installInfo = Invoke-MgGraphRequest -Method GET -Uri "$($Global:BetabaseUri)/deviceAppManagement/mobileApps/$($item.id)/installSummary"
-                    $AppInstallList += New-Object PSObject -Property @{
-                        'platform' = $AppTypeList."$($item.'@odata.type')"
-                        'id' = $item.id
-                        'installedDeviceCount' = $installInfo.installedDeviceCount
-                        'failedDeviceCount' = $installInfo.failedDeviceCount
-                        'notApplicableDeviceCount' = $installInfo.notApplicableDeviceCount
-                        'notInstalledDeviceCount' = $installInfo.notInstalledDeviceCount
-                        'pendingInstallDeviceCount' = $installInfo.pendingInstallDeviceCount
-                        'installedUserCount' = $installInfo.installedUserCount
-                        'notApplicableUserCount' = $installInfo.notApplicableUserCount
-                        'failedUserCount' = $installInfo.failedUserCount
-                        'notInstalledUserCount' = $installInfo.notInstalledUserCount
-                        'pendingInstallUserCount' = $installInfo.pendingInstallUserCount
+                    try {
+                        Invoke-MgGraphRequest -Method POST -Uri "$($Global:BetabaseUri)/deviceManagement/reports/getAppStatusOverviewReport" -Body "{`"filter`": `"(ApplicationId eq '$($item.id)')`"}" -OutputFilePath "$($env:Temp)\$($item.id).json" | Out-Null
+                        $installInfo = Get-Content "$($env:Temp)\$($item.id).json" -RAW | ConvertFrom-Json
+                        $AppInstallList += New-Object PSObject -Property @{
+                            'platform' = $AppTypeList."$($item.'@odata.type')"
+                            'id' = $item.id
+                            'installedDeviceCount' = Get-Iif -if ([string]::IsNullOrEmpty($installInfo.values[3])) -Then 0 -Else ($installInfo.values[3])  #.installedDeviceCount
+                            'failedDeviceCount' = Get-Iif -if ([string]::IsNullOrEmpty($installInfo.values[1])) -Then 0 -Else ($installInfo.values[1]) #.failedDeviceCount
+                            'notApplicableDeviceCount' = Get-Iif -if ([string]::IsNullOrEmpty($installInfo.values[5])) -Then 0 -Else ($installInfo.values[5]) #.notApplicableDeviceCount
+                            'notInstalledDeviceCount' = Get-Iif -if ([string]::IsNullOrEmpty($installInfo.values[4])) -Then 0 -Else ($installInfo.values[4]) #.notInstalledDeviceCount
+                            'pendingInstallDeviceCount' = Get-Iif -if ([string]::IsNullOrEmpty($installInfo.values[2])) -Then 0 -Else ($installInfo.values[2]) #.pendingInstallDeviceCount
+                            'installedUserCount' = Get-Iif -if ([string]::IsNullOrEmpty($installInfo.values[8])) -Then 0 -Else ($installInfo.values[8]) #.installedUserCount
+                            'notApplicableUserCount' = Get-Iif -if ([string]::IsNullOrEmpty($installInfo.values[10])) -Then 0 -Else ($installInfo.values[10]) #.notApplicableUserCount
+                            'failedUserCount' = Get-Iif -if ([string]::IsNullOrEmpty($installInfo.values[6])) -Then 0 -Else ($installInfo.values[6]) #.failedUserCount
+                            'notInstalledUserCount' = Get-Iif -if ([string]::IsNullOrEmpty($installInfo.values[9])) -Then 0 -Else ($installInfo.values[9]) #.notInstalledUserCount
+                            'pendingInstallUserCount' = Get-Iif -if ([string]::IsNullOrEmpty($installInfo.values[7])) -Then 0 -Else ($installInfo.values[7]) #.pendingInstallUserCount
+                        }
+                    } catch {
+                        Write-RFLLog -Message "Error 500 when getting getAppStatusOverviewReport for Application '$($item.displayName)' ('$($item.id)'). An error occurred $($_)" -LogLevel 3
+                    }
+                    if (Test-Path -Path "$($env:Temp)\$($item.id).json") {
+                        Remove-Item "$($env:Temp)\$($item.id).json" -Force | Out-Null
                     }
                 }
                 #endregion
@@ -2686,19 +2957,21 @@ try {
 
     Write-RFLLog -Message "All Reports ($($OutputFormat.Count)) have been exported to '$($OutputFolderPath)'" -LogLevel 2
     #endregion
-
-    #region Export Errors
-    if ($Error.Count -gt 0) {
-        Write-RFLLog -Message "Error found when running script"
-        foreach($item in $Error) {
-            Write-RFLLog -Message $item
-        }
-    }
-    #endregion
 } catch {
     Write-RFLLog -Message "An error occurred $($_)" -LogLevel 3
     Exit 3000
 } finally {
+    #region Export Errors
+    if ($Error.Count -gt 0) {
+        Write-RFLLog -Message "A Total of $($Error.Count) errors were found when running script"
+        $i = 0
+        foreach($item in $Error) {
+            $i++            
+            Write-RFLLog -Message "Error $($i):$([Environment]::NewLine)  Error message: $($item.ToString())$([Environment]::NewLine)  Error exception: $($item.Exception)$([Environment]::NewLine)  Failing script: $($item.InvocationInfo.ScriptName)$([Environment]::NewLine)  Failing at line number: $($item.InvocationInfo.ScriptLineNumber)$([Environment]::NewLine)  Failing at line: $($item.InvocationInfo.Line)$([Environment]::NewLine)  Powershell command path: $($item.InvocationInfo.PSCommandPath)$([Environment]::NewLine)  Position message: $($item.InvocationInfo.PositionMessage)$([Environment]::NewLine)  Stack trace: $($item.ScriptStackTrace)$([Environment]::NewLine)" -LogLevel 3
+        }
+    }
+    #endregion
+
     Set-Location $Script:CurrentFolder
     Write-RFLLog -Message "*** Ending ***"
 }
